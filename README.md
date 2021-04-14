@@ -1,4 +1,4 @@
-# aa203-neural-car
+# AA203 - Neural Car Controller
 Train a neural network to emulate a MPC controller for Dubin's car
 
 ## Getting Started
