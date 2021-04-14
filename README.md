@@ -6,7 +6,5 @@ With Anaconda / Miniconda:
 ```
 conda create -n aa203-neural-car
 conda activate aa203-neural-car
-conda install poetry
-poetry update
-poetry install
+conda env update --file env.yml
 ```
