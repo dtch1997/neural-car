@@ -2,7 +2,7 @@
 Train a neural network to emulate a MPC controller for Dubin's car
 
 ## Getting Started
-With Conda:
+With Anaconda / Miniconda:
 ```
 conda create -n aa203-neural-car
 conda activate aa203-neural-car
