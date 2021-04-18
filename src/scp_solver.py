@@ -1,6 +1,7 @@
 import cvxpy as cp 
-import numpy as np 
+import numpy as np
 from typing import Dict
+import env as car_env
 
 
 """ Slicing convenience functions """
@@ -14,7 +15,7 @@ class AttrDict(Dict):
     def __setitem__(self, key, value):
         super().__setitem__(key, value)
         setattr(self, key, value)
-    @staticmethod 
+    @staticmethod
     def from_dict(dict):
         attrdict =  AttrDict()
         for key, value in dict.items():
@@ -60,18 +61,18 @@ class SCPSolver:
     def input(self):
         """ Get all the variables that encode the input to the system """
         return cp.vstack([
-            self.variables.jerk, 
+            self.variables.jerk,
             self.variables.pinch
         ])
 
-    @property 
+    @property
     def state(self):
         """ Get all the variables that encode the state of the system """
         return cp.vstack([
-            self.variables.xpos, 
-            self.variables.ypos, 
+            self.variables.xpos,
+            self.variables.ypos,
             self.variables.velocity,
-            self.variables.theta, 
+            self.variables.theta,
             self.variables.kappa
         ])
 
@@ -132,4 +133,34 @@ if __name__ == "__main__":
     solver.solve()
     print(solver.variables.xpos.value)
     print(solver.parameters.prev_xpos.value)
+    
+    env = car_env.CarRacing(
+            allow_reverse=True, 
+            grayscale=1,
+            show_info_panel=1,
+            discretize_actions=None,
+            num_obstacles=100,
+            num_tracks=1,
+            num_lanes=1,
+            num_lanes_changes=4,
+            max_time_out=0,
+            frames_per_state=4)
 
+    env.reset()  # Put the car at the starting position
+    
+    k = 20 # Number of iterations for the Convex solve
+    
+    for _ in range(1000):
+      env.render()
+      action = env.action_space.sample() # your agent here (this takes random actions)
+      
+      
+      
+      problem.solve()
+      
+      
+      observation, reward, done, info = env.step(action)
+    
+      if done:
+        observation = env.reset()
+    env.close
