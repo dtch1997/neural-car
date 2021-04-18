@@ -23,7 +23,6 @@ class SCPSolver:
     def __init__(self, num_time_steps, duration):
         self.num_time_steps = num_time_steps
         self.duration = duration
-
         self.time_step_magnitude = duration / num_time_steps
         # Parameter semantics: 
         #   State variables:
@@ -31,7 +30,6 @@ class SCPSolver:
         #   Inputs:
         #   - state[t+1] = f(state[t], input[t])
         self.parameters = AttrDict.from_dict({
-            "time_step_magnitude": cp.Parameter(shape = (), value = self.time_step_magnitude),
             "prev_xpos": cp.Parameter(shape = num_time_steps+1),
             "prev_ypos": cp.Parameter(shape = num_time_steps+1),
             "prev_velocity": cp.Parameter(shape = num_time_steps+1),
@@ -47,6 +45,8 @@ class SCPSolver:
             "jerk" : cp.Variable(num_time_steps),
             "pinch" : cp.Variable(num_time_steps)
         })
+
+        self.problem = cp.Problem(self.objective, self.constraints)
 
     @property
     def input(self):
@@ -78,17 +78,22 @@ class SCPSolver:
     @property
     def constraints(self):        
         # Previous state trajectories are stored in self.parameters
-        return []
+        return [
+            # This is just here for debugging right now
+            cp.sum(self.variables.xpos) == 1
+        ]
 
-    def solve(self, inputs: Dict[str, np.ndarray] = {}):
-        for key, value_np in inputs:
-            assert key in self.variables
-            self.variables[key].value = value_np
-        problem = cp.Problem(self.objective, self.constraints)
-        problem.solve()
+    def solve(self):
+        self.problem.solve()
+        # Initialize the parameters to the values found by solve
+        # This way, the next time we call 'solve' we'll already have the right values
+        for param_key in self.parameters.keys():
+            var_key = param_key[5:] # get the corresponding variable
+            self.parameters[param_key].value = self.variables[var_key].value
 
 if __name__ == "__main__":
     solver = SCPSolver(100, 10)
     solver.solve()
-    print(solver.variables.jerk.value)
+    print(solver.variables.xpos.value)
+    print(solver.parameters.prev_xpos.value)
 
