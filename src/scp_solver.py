@@ -1,17 +1,28 @@
 import env as car_env
-import cvxpy as cp 
+import cvxpy as cp
 
-def initialize_problem(num_time_steps):
-    xpos = cp.Variable(num_time_steps)
-    ypos = cp.Variable(num_time_steps)
-    velocity = cp.Variable(num_time_steps)
-    theta = cp.Variable(num_time_steps)
-    kappa = cp.Variable(num_time_steps)
+def initialize_problem(num_time_steps, duration : float):
+    time_step_magnitude = duration / num_time_steps
+    h = cp.Parameter(time_step_magnitude)
+
+    xpos = cp.Variable(num_time_steps+1)
+    ypos = cp.Variable(num_time_steps+1)
+    velocity = cp.Variable(num_time_steps+1)
+    theta = cp.Variable(num_time_steps+1)
+    kappa = cp.Variable(num_time_steps+1)
     jerk = cp.Variable(num_time_steps)
     pinch = cp.Variable(num_time_steps)
 
     # TODO: Initialize constraints
-    constraints = []
+    def curr(var: cp.Variable):
+        return var[1:]
+    def prev(var: cp.Variable)
+        return var[:-1]
+
+    constraints = [
+        # curr(x) = prev(x) + h * (prev(V) * prev(cp.sin(theta)) +
+
+    ]
 
     # Initialize objective
     input = cp.vstack([jerk, pinch])
@@ -21,13 +32,13 @@ def initialize_problem(num_time_steps):
 
     objective = cp.Minimize(cp.sum(input_norm))
     problem = cp.Problem(objective, constraints)
-    return problem
+    return problem, jerk, pinch
 
 if __name__ == "__main__":
     #problem = initialize_problem(100)
     #print(problem)
     env = car_env.CarRacing(
-            allow_reverse=True, 
+            allow_reverse=True,
             grayscale=1,
             show_info_panel=1,
             discretize_actions=None,
@@ -44,7 +55,7 @@ if __name__ == "__main__":
       action = env.action_space.sample() # your agent here (this takes random actions)
       print(action)
       observation, reward, done, info = env.step(action)
-    
+
       if done:
         observation = env.reset()
     env.close
