@@ -1,3 +1,4 @@
+import env as car_env
 import cvxpy as cp 
 
 def initialize_problem(num_time_steps):
@@ -23,6 +24,27 @@ def initialize_problem(num_time_steps):
     return problem
 
 if __name__ == "__main__":
-    problem = initialize_problem(100)
-    print(problem)
+    #problem = initialize_problem(100)
+    #print(problem)
+    env = car_env.CarRacing(
+            allow_reverse=True, 
+            grayscale=1,
+            show_info_panel=1,
+            discretize_actions=None,
+            num_obstacles=100,
+            num_tracks=1,
+            num_lanes=1,
+            num_lanes_changes=4,
+            max_time_out=0,
+            frames_per_state=4)
 
+    env.reset()  # Put the car at the starting position
+    for _ in range(1000):
+      env.render()
+      action = env.action_space.sample() # your agent here (this takes random actions)
+      print(action)
+      observation, reward, done, info = env.step(action)
+    
+      if done:
+        observation = env.reset()
+    env.close
