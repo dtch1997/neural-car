@@ -23,7 +23,7 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    def __init__(self, num_time_steps, duration
+    def __init__(self, num_time_steps, duration,
             initial_position: np.ndarray[2], 
             final_position: np.ndarray[2],
             max_jerk: float, 
@@ -150,7 +150,7 @@ class SCPSolver:
             xpos[0] == self.constants.initial_position[0],
             ypos[0] == self.constants.initial_position[1],
             xpos[-1] == self.constants.final_position[0],
-            ypos[-1] == self.constants.final_position[0],
+            ypos[-1] == self.constants.final_position[1],
             cp.norm(jerk, p=np.inf) <= self.constants.max_jerk, 
             cp.norm(juke, p=np.inf) <= self.constants.max_juke, 
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
