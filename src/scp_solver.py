@@ -1,7 +1,8 @@
-import cvxpy as cp 
+import cvxpy as cp
 import numpy as np
 from typing import Dict
 import env as car_env
+from copy import deepcopy
 
 
 """ Slicing convenience functions """
@@ -23,19 +24,19 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    def __init__(self, num_time_steps, duration
-            initial_position: np.ndarray[2], 
+    def __init__(self, num_time_steps, duration,
+            initial_position: np.ndarray[2],
             final_position: np.ndarray[2],
-            max_jerk: float, 
-            max_juke: float, 
-            max_velocity: float, 
+            max_jerk: float,
+            max_juke: float,
+            max_velocity: float,
             max_kappa: float,
-            max_deviation_from_reference: float    
+            max_deviation_from_reference: float
         ):
         self.num_time_steps = num_time_steps
         self.duration = duration
-        time_step_magnitude = duration / num_time_steps 
-        # Parameter semantics: 
+        time_step_magnitude = duration / num_time_steps
+        # Parameter semantics:
         #   State variables:
         #   - self.variables.xpos[0] is the initial state
         #   Inputs:
@@ -46,8 +47,8 @@ class SCPSolver:
             "initial_position": cp.Constant(initial_position),
             "final_position": cp.Constant(final_position),
             "max_jerk": cp.Constant(max_jerk),
-            "max_juke": cp.Constant(max_juke), 
-            "max_velocity": cp.Constant(max_velocity), 
+            "max_juke": cp.Constant(max_juke),
+            "max_velocity": cp.Constant(max_velocity),
             "max_kappa": cp.Constant(max_kappa),
             "max_deviation_from_reference": cp.Constant(max_deviation_from_reference)
         })
@@ -67,7 +68,7 @@ class SCPSolver:
             "velocity" : cp.Variable(num_time_steps+1),
             "theta" : cp.Variable(num_time_steps+1),
             "kappa" : cp.Variable(num_time_steps+1),
-            "acceleration": cp.Variable(num_time_steps+1), 
+            "acceleration": cp.Variable(num_time_steps+1),
             "pinch" : cp.Variable(num_time_steps+1),
             "jerk" : cp.Variable(num_time_steps),
             "juke" : cp.Variable(num_time_steps),
@@ -92,7 +93,7 @@ class SCPSolver:
             self.variables.velocity,
             self.variables.theta,
             self.variables.kappa,
-            self.variables.acceleration, 
+            self.variables.acceleration,
             self.variables.pinch
         ])
 
@@ -105,12 +106,12 @@ class SCPSolver:
         return cp.Minimize(cp.sum(input_norm))
 
     @property
-    def constraints(self):        
-        xpos = self.variables.xpos 
+    def constraints(self):
+        xpos = self.variables.xpos
         ypos = self.variables.ypos
         veloc = self.variables.velocity
         theta = self.variables.theta
-        kappa = self.variables.kappa 
+        kappa = self.variables.kappa
         accel = self.variables.acceleration
         pinch = self.variables.pinch
         jerk = self.variables.jerk
@@ -118,11 +119,11 @@ class SCPSolver:
 
         # Previous estimates of state trajectories are stored in self.parameters
         prev_xpos = self.parameters.prev_xpos
-        prev_ypos = self.parameters.prev_ypos 
+        prev_ypos = self.parameters.prev_ypos
         prev_veloc = self.parameters.prev_velocity
         prev_theta = self.parameters.prev_theta
         prev_kappa = self.parameters.prev_kappa
-        prev_accel = self.parameters.prev_accel 
+        prev_accel = self.parameters.prev_accel
         prev_pinch = self.parameters.prev_pinch
 
         h = self.constants.time_step_magnitude
@@ -133,11 +134,11 @@ class SCPSolver:
         """ Add the geometric constraints """
         constraints += [
             nxt(xpos) == curr(xpos) + h * (
-                    cp.multiply(curr(veloc), np.cos(curr(prev_theta).value)) 
+                    cp.multiply(curr(veloc), np.cos(curr(prev_theta).value))
                     - cp.multiply(cp.multiply(curr(prev_veloc), np.sin(curr(prev_theta).value)), delta_theta)
                 ),
             nxt(ypos) == curr(ypos) + h * (
-                    cp.multiply(curr(veloc), np.sin(curr(prev_theta).value)) 
+                    cp.multiply(curr(veloc), np.sin(curr(prev_theta).value))
                     - cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
                 ),
             nxt(theta) == curr(theta) + h * (
@@ -150,9 +151,9 @@ class SCPSolver:
             xpos[0] == self.constants.initial_position[0],
             ypos[0] == self.constants.initial_position[1],
             xpos[-1] == self.constants.final_position[0],
-            ypos[-1] == self.constants.final_position[0],
-            cp.norm(jerk, p=np.inf) <= self.constants.max_jerk, 
-            cp.norm(juke, p=np.inf) <= self.constants.max_juke, 
+            ypos[-1] == self.constants.final_position[1],
+            cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
+            cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
             cp.norm(kappa, p=np.inf) <= self.constants.max_kappa
         ]
@@ -178,9 +179,9 @@ if __name__ == "__main__":
     solver.solve()
     print(solver.variables.xpos.value)
     print(solver.parameters.prev_xpos.value)
-    
+
     env = car_env.CarRacing(
-            allow_reverse=True, 
+            allow_reverse=True,
             grayscale=1,
             show_info_panel=1,
             discretize_actions=None,
@@ -192,15 +193,22 @@ if __name__ == "__main__":
             frames_per_state=4)
 
     env.reset()  # Put the car at the starting position
-    
-    k = 20 # Number of iterations for the Convex solve
-    
+
+    diff = math.inf #initialize to unreasonable value to overwrite in loop
+    epsilon = 0.01 #tolerance for convergence of the solution
+    prevCost = -1*math.inf
+
     for _ in range(1000):
       env.render()
-      action = env.action_space.sample() # your agent here (this takes random actions)      
-      problem.solve()
+      action = env.action_space.sample() # your agent here (this takes random actions)
+      while abs(diff) > epsilon:
+          optval = problem.solve()
+          print('opt :',optval) #monitor
+          diff = optval - prevCost
+          #xt = deepcopy(x.value) #copy of state trajectory
+
       observation, reward, done, info = env.step(action)
-    
+
       if done:
         observation = env.reset()
     env.close
