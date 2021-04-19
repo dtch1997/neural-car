@@ -23,34 +23,16 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    def __init__(self, num_time_steps, duration
-            initial_position: np.ndarray[2], 
-            final_position: np.ndarray[2],
-            max_jerk: float, 
-            max_juke: float, 
-            max_velocity: float, 
-            max_kappa: float,
-            max_deviation_from_reference: float    
-        ):
+    def __init__(self, num_time_steps, duration):
         self.num_time_steps = num_time_steps
         self.duration = duration
-        time_step_magnitude = duration / num_time_steps 
+        self.time_step_magnitude = duration / num_time_steps 
+
         # Parameter semantics: 
         #   State variables:
         #   - self.variables.xpos[0] is the initial state
         #   Inputs:
         #   - state[t+1] = f(state[t], input[t])
-
-        self.constants = AttrDict.from_dict({
-            "time_step_magnitude": cp.Constant(time_step_magnitude),
-            "initial_position": cp.Constant(initial_position),
-            "final_position": cp.Constant(final_position),
-            "max_jerk": cp.Constant(max_jerk),
-            "max_juke": cp.Constant(max_juke), 
-            "max_velocity": cp.Constant(max_velocity), 
-            "max_kappa": cp.Constant(max_kappa),
-            "max_deviation_from_reference": cp.Constant(max_deviation_from_reference)
-        })
         zeros = np.zeros(num_time_steps+1)
         self.parameters = AttrDict.from_dict({
             "prev_xpos": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
@@ -59,7 +41,7 @@ class SCPSolver:
             "prev_theta": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_kappa": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_acceleraton": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_pinch": cp.Parameter(shape = num_time_steps+1, value = zeros.copy())
+            "prev_juke": cp.Parameter(shape = num_time_steps+1, value = zeros.copy())
         })
         self.variables = AttrDict.from_dict({
             "xpos": cp.Variable(num_time_steps+1),
@@ -91,9 +73,7 @@ class SCPSolver:
             self.variables.ypos,
             self.variables.velocity,
             self.variables.theta,
-            self.variables.kappa,
-            self.variables.acceleration, 
-            self.variables.pinch
+            self.variables.kappa
         ])
 
     @property
@@ -111,10 +91,8 @@ class SCPSolver:
         veloc = self.variables.velocity
         theta = self.variables.theta
         kappa = self.variables.kappa 
-        accel = self.variables.acceleration
-        pinch = self.variables.pinch
         jerk = self.variables.jerk
-        juke = self.variables.juke
+        pinch = self.variables.pinch
 
         # Previous estimates of state trajectories are stored in self.parameters
         prev_xpos = self.parameters.prev_xpos
@@ -122,16 +100,11 @@ class SCPSolver:
         prev_veloc = self.parameters.prev_velocity
         prev_theta = self.parameters.prev_theta
         prev_kappa = self.parameters.prev_kappa
-        prev_accel = self.parameters.prev_accel 
-        prev_pinch = self.parameters.prev_pinch
 
-        h = self.constants.time_step_magnitude
-        r = self.constants.max_deviation_from_reference
+        h = self.num_time_steps 
         delta_theta = curr(theta) - curr(prev_theta) # 0i - 0i^{(k)}
-        constraints = []
 
-        """ Add the geometric constraints """
-        constraints += [
+        return [
             nxt(xpos) == curr(xpos) + h * (
                     cp.multiply(curr(veloc), np.cos(curr(prev_theta).value)) 
                     - cp.multiply(cp.multiply(curr(prev_veloc), np.sin(curr(prev_theta).value)), delta_theta)
@@ -143,26 +116,8 @@ class SCPSolver:
             nxt(theta) == curr(theta) + h * (
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
                     + cp_multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa)))
-                ),
-            nxt(kappa) == prev(kappa) + h * prev(pinch),
-            nxt(accel) == prev(accel) + h * jerk,
-            nxt(pinch) == prev(pinch) + h * juke,
-            xpos[0] == self.constants.initial_position[0],
-            ypos[0] == self.constants.initial_position[1],
-            xpos[-1] == self.constants.final_position[0],
-            ypos[-1] == self.constants.final_position[0],
-            cp.norm(jerk, p=np.inf) <= self.constants.max_jerk, 
-            cp.norm(juke, p=np.inf) <= self.constants.max_juke, 
-            cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
-            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa
+                )
         ]
-
-        # Add the max deviation from reference constraint
-        constraints += [
-
-        ]
-
-        return constraints
 
     def solve(self) -> float:
         optval = self.problem.solve()
@@ -197,8 +152,13 @@ if __name__ == "__main__":
     
     for _ in range(1000):
       env.render()
-      action = env.action_space.sample() # your agent here (this takes random actions)      
+      action = env.action_space.sample() # your agent here (this takes random actions)
+      
+      
+      
       problem.solve()
+      
+      
       observation, reward, done, info = env.step(action)
     
       if done:
