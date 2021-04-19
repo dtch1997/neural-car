@@ -143,11 +143,11 @@ class SCPSolver:
                 ),
             nxt(theta) == curr(theta) + h * (
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
-                    + cp_multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa)))
+                    + cp.multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa))
                 ),
-            nxt(kappa) == prev(kappa) + h * prev(pinch),
-            nxt(accel) == prev(accel) + h * jerk,
-            nxt(pinch) == prev(pinch) + h * juke,
+            nxt(kappa) == curr(kappa) + h * curr(pinch),
+            nxt(accel) == curr(accel) + h * jerk,
+            nxt(pinch) == curr(pinch) + h * juke,
             xpos[0] == self.constants.initial_position[0],
             ypos[0] == self.constants.initial_position[1],
             xpos[-1] == self.constants.final_position[0],
@@ -174,12 +174,14 @@ class SCPSolver:
             self.parameters[param_key].value = self.variables[var_key].value
         return optval
 
-if __name__ == "__main__":
-    solver = SCPSolver(100, 10)
-    solver.solve()
-    print(solver.variables.xpos.value)
-    print(solver.parameters.prev_xpos.value)
+def updateInitialPosition(env, solver):
+    x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
+    y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
+    init_pos = np.array([x,y])
+    solver.constants.initial_position = cp.Constant(init_pos)
 
+if __name__ == "__main__":
+    
     env = car_env.CarRacing(
             allow_reverse=True,
             grayscale=1,
@@ -194,19 +196,55 @@ if __name__ == "__main__":
 
     env.reset()  # Put the car at the starting position
 
-    diff = math.inf #initialize to unreasonable value to overwrite in loop
+    # Obtain initial state information
+    x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
+    y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
+    theta = env.car.hull.angle 
+    velocity = env.car.hull.linearVelocity 
+    ell = 80+82 # Obtained in neural car dynamics global variables
+    kappa = np.tan(env.car.wheels[0].angle)/ell 
+
+    # Default initial position
+    init_pos = np.array([x,y])
+    # Default final position 
+    final_pos = ([40, 40])
+    
+    # Initialize to very high value until further notice
+    very_high_value = 10**(14)
+    max_jerk = very_high_value
+    max_juke = very_high_value
+    max_velocity = very_high_value
+    max_kappa = very_high_value
+    max_deviation_from_reference = very_high_value
+
+    solver = SCPSolver(100, 10, init_pos, final_pos,
+            max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
+
+    diff = np.inf #initialize to unreasonable value to overwrite in loop
     epsilon = 0.01 #tolerance for convergence of the solution
-    prevCost = -1*math.inf
+    prevCost = -1*np.inf
+
+    action = np.zeros(3)
 
     for _ in range(1000):
       env.render()
-      action = env.action_space.sample() # your agent here (this takes random actions)
+      updateInitialPosition(env, solver)
       while abs(diff) > epsilon:
-          optval = problem.solve()
-          print('opt :',optval) #monitor
+          optval = solver.solve()
+          #print('opt :',optval) #monitor
           diff = optval - prevCost
           #xt = deepcopy(x.value) #copy of state trajectory
-
+          
+      # Obtain the chosen action given the MPC solve
+      kappa = solver.variables.kappa[0].value
+      action[0] = np.arctan(ell*kappa) # steering action
+      SIZE = 0.02
+      mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
+      acc = solver.variables.acceleration[0].value
+      action[1] = mass*acc # gas action
+      action[2] = 0 # brake action - not used for our purposes
+      
+      # Step through the environment
       observation, reward, done, info = env.step(action)
 
       if done:
