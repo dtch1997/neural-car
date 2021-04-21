@@ -94,6 +94,13 @@ class SCPSolver:
 
         self.problem = cp.Problem(self.objective, self.constraints)
 
+    def linearInit(self, init_pos, final_pos, velocity, theta, kappa):
+        self.parameters.prev_xpos = np.linspace(init_pos[0], final_pos[0], self.num_time_steps)
+        self.parameters.prev_ypos = np.linspace(init_pos[1], final_pos[1], self.num_time_steps)
+        self.parameters.prev_velocity = velocity*np.ones(self.num_time_steps+1)
+        self.parameters.prev_theta = theta*np.ones(self.num_time_steps+1)
+        self.parameters.prev_kappa = kappa*np.ones(self.num_time_steps+1)
+        
     @property
     def input(self):
         """ Get all the variables that encode the input to the system """
@@ -205,6 +212,10 @@ class SCPSolver:
             self.parameters[param_key].value = self.variables[var_key].value
         return optval
 
+def rotateByAngle(vec, th):
+    M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
+    return M@vec
+
 def updateInitialPosition(env, solver):
     x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
@@ -231,14 +242,18 @@ if __name__ == "__main__":
     x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
     theta = env.car.hull.angle 
-    velocity = env.car.hull.linearVelocity 
+    vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
+    vec2 = rotateByAngle(np.array([1,0]), theta)
+    dot_prod = np.dot(vec1, vec2)
+    velocity = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
+    print(velocity)
     ell = 80+82 # Obtained in neural car dynamics global variables
     kappa = np.tan(env.car.wheels[0].angle)/ell 
 
     # Default initial position
     init_pos = np.array([x,y])
     # Default final position 
-    final_pos = ([40, 40])
+    final_pos = np.array([40, 40])
     
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
@@ -251,6 +266,8 @@ if __name__ == "__main__":
     solver = SCPSolver(100, 10, init_pos, final_pos,
             max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
 
+    solver.linearInit(init_pos, final_pos, velocity, theta, kappa) # Linearly interpolate init and final pos
+    
     diff = np.inf #initialize to unreasonable value to overwrite in loop
     epsilon = 0.01 #tolerance for convergence of the solution
     prevCost = -1*np.inf
@@ -261,11 +278,10 @@ if __name__ == "__main__":
       env.render()
       updateInitialPosition(env, solver)
       while abs(diff) > epsilon:
-          print("before solve")
           optval = solver.solve()
           #print('opt :',optval) #monitor
-          print("after solve")
           diff = optval - prevCost
+          print(diff)
           #xt = deepcopy(x.value) #copy of state trajectory
           
       # Obtain the chosen action given the MPC solve
