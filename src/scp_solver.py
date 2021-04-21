@@ -25,8 +25,8 @@ class AttrDict(Dict):
 
 class SCPSolver:
     def __init__(self, num_time_steps, duration,
-            initial_position: np.ndarray[2],
-            final_position: np.ndarray[2],
+            initial_position: np.ndarray,
+            final_position: np.ndarray,
             max_jerk: float,
             max_juke: float,
             max_velocity: float,
@@ -59,7 +59,7 @@ class SCPSolver:
             "prev_velocity": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_theta": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_kappa": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_acceleraton": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
+            "prev_accel": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_pinch": cp.Parameter(shape = num_time_steps+1, value = zeros.copy())
         })
         self.variables = AttrDict.from_dict({
@@ -68,7 +68,7 @@ class SCPSolver:
             "velocity" : cp.Variable(num_time_steps+1),
             "theta" : cp.Variable(num_time_steps+1),
             "kappa" : cp.Variable(num_time_steps+1),
-            "acceleration": cp.Variable(num_time_steps+1),
+            "accel": cp.Variable(num_time_steps+1),
             "pinch" : cp.Variable(num_time_steps+1),
             "jerk" : cp.Variable(num_time_steps),
             "juke" : cp.Variable(num_time_steps),
@@ -81,7 +81,7 @@ class SCPSolver:
         """ Get all the variables that encode the input to the system """
         return cp.vstack([
             self.variables.jerk,
-            self.variables.pinch
+            self.variables.juke
         ])
 
     @property
@@ -93,13 +93,13 @@ class SCPSolver:
             self.variables.velocity,
             self.variables.theta,
             self.variables.kappa,
-            self.variables.acceleration,
+            self.variables.accel,
             self.variables.pinch
         ])
 
     @property
     def objective(self):
-        input = cp.vstack([self.variables.jerk, self.variables.pinch])
+        input = cp.vstack([self.variables.jerk, self.variables.juke])
         assert input.shape == (2, self.num_time_steps)
         input_norm = cp.norm(input, axis=0)
         assert input_norm.shape == (self.num_time_steps,)
@@ -112,7 +112,7 @@ class SCPSolver:
         veloc = self.variables.velocity
         theta = self.variables.theta
         kappa = self.variables.kappa
-        accel = self.variables.acceleration
+        accel = self.variables.accel
         pinch = self.variables.pinch
         jerk = self.variables.jerk
         juke = self.variables.juke
@@ -169,8 +169,12 @@ class SCPSolver:
         optval = self.problem.solve()
         # Initialize the parameters to the values found by solve
         # This way, the next time we call 'solve' we'll already have the right values
+        print(optval)
         for param_key in self.parameters.keys():
+            print(param_key)
             var_key = param_key[5:] # get the corresponding variable
+            print(var_key)
+            print(self.variables[var_key].value)
             self.parameters[param_key].value = self.variables[var_key].value
         return optval
 
@@ -230,8 +234,10 @@ if __name__ == "__main__":
       env.render()
       updateInitialPosition(env, solver)
       while abs(diff) > epsilon:
+          print("before solve")
           optval = solver.solve()
           #print('opt :',optval) #monitor
+          print("after solve")
           diff = optval - prevCost
           #xt = deepcopy(x.value) #copy of state trajectory
           
@@ -240,7 +246,7 @@ if __name__ == "__main__":
       action[0] = np.arctan(ell*kappa) # steering action
       SIZE = 0.02
       mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
-      acc = solver.variables.acceleration[0].value
+      acc = solver.variables.accel[0].value
       action[1] = mass*acc # gas action
       action[2] = 0 # brake action - not used for our purposes
       
