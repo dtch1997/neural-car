@@ -1,9 +1,8 @@
 import cvxpy as cp
 import numpy as np
-from typing import Dict
-import env as car_env
+import env as car_env 
 
-from typing import List
+from typing import List, Dict
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -94,9 +93,9 @@ class SCPSolver:
 
         self.problem = cp.Problem(self.objective, self.constraints)
 
-    def linearInit(self, init_pos, final_pos, velocity, theta, kappa):
-        self.parameters.prev_xpos = np.linspace(init_pos[0], final_pos[0], self.num_time_steps)
-        self.parameters.prev_ypos = np.linspace(init_pos[1], final_pos[1], self.num_time_steps)
+    def linear_init(self, init_pos, final_pos, velocity, theta, kappa):
+        self.parameters.prev_xpos = np.linspace(init_pos[0], final_pos[0], self.num_time_steps+1)
+        self.parameters.prev_ypos = np.linspace(init_pos[1], final_pos[1], self.num_time_steps+1)
         self.parameters.prev_velocity = velocity*np.ones(self.num_time_steps+1)
         self.parameters.prev_theta = theta*np.ones(self.num_time_steps+1)
         self.parameters.prev_kappa = kappa*np.ones(self.num_time_steps+1)
@@ -177,18 +176,21 @@ class SCPSolver:
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
                     + cp.multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa))
                 ),
+            nxt(veloc) == curr(veloc) + h * curr(accel),
             nxt(kappa) == curr(kappa) + h * curr(pinch),
             nxt(accel) == curr(accel) + h * jerk,
             nxt(pinch) == curr(pinch) + h * juke,
             xpos[0] == self.constants.initial_position[0],
             ypos[0] == self.constants.initial_position[1],
+            #veloc[-1] == 0,
             #xpos[-1] == self.constants.final_position[0],
             #ypos[-1] == self.constants.final_position[1],
             cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
             cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
-            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa
+            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa, 
         ]
+
         # TODO: Add the obstacle avoidance constraints 
         constraints += [
             
@@ -210,6 +212,14 @@ class SCPSolver:
         for param_key in self.parameters.keys():
             var_key = param_key[5:] # get the corresponding variable
             self.parameters[param_key].value = self.variables[var_key].value
+
+        self.linear_init(
+            self.constants.initial_position.value, 
+            self.constants.final_position.value,
+            self.variables.velocity.value[1],
+            self.variables.theta.value[1],
+            self.variables.kappa.value[1] 
+        )
         return optval
 
 def rotateByAngle(vec, th):
@@ -223,7 +233,6 @@ def updateInitialPosition(env, solver):
     solver.constants.initial_position = cp.Constant(init_pos)
 
 if __name__ == "__main__":
-    
     env = car_env.CarRacing(
             allow_reverse=True,
             grayscale=1,
@@ -253,49 +262,50 @@ if __name__ == "__main__":
     # Default initial position
     init_pos = np.array([x,y])
     # Default final position 
-    final_pos = np.array([40, 40])
+    final_pos = np.array([x+10, y])
     
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
     max_jerk = very_high_value
     max_juke = very_high_value
-    max_velocity = very_high_value
-    max_kappa = very_high_value
+    max_velocity = 10
+    max_kappa = 0.2
     max_deviation_from_reference = very_high_value
-
-    solver = SCPSolver(100, 10, init_pos, final_pos,
-            max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
-
-    solver.linearInit(init_pos, final_pos, velocity, theta, kappa) # Linearly interpolate init and final pos
-    
-    diff = np.inf #initialize to unreasonable value to overwrite in loop
     epsilon = 0.01 #tolerance for convergence of the solution
-    prevCost = -1*np.inf
-
     action = np.zeros(3)
 
-    for _ in range(1000):
-      env.render()
-      updateInitialPosition(env, solver)
-      while abs(diff) > epsilon:
-          optval = solver.solve()
-          #print('opt :',optval) #monitor
-          diff = optval - prevCost
-          print(diff)
-          #xt = deepcopy(x.value) #copy of state trajectory
-          
-      # Obtain the chosen action given the MPC solve
-      kappa = solver.variables.kappa[0].value
-      action[0] = np.arctan(ell*kappa) # steering action
-      SIZE = 0.02
-      mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
-      acc = solver.variables.accel[0].value
-      action[1] = mass*acc # gas action
-      action[2] = 0 # brake action - not used for our purposes
-      
-      # Step through the environment
-      observation, reward, done, info = env.step(action)
+    solver = SCPSolver(100, 2, init_pos, final_pos,
+        max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
+    # solver.linearInit(init_pos, final_pos, velocity, theta, kappa)
 
-      if done:
-        observation = env.reset()
+    for _ in range(1000):
+        # Linearly interpolate init and final pos
+        updateInitialPosition(env, solver)
+        
+        diff = np.inf #initialize to unreasonable value to overwrite in loop
+        prevCost = -1*np.inf
+        env.render()
+
+        while abs(diff) > epsilon:
+            optval = solver.solve()
+            #print('opt :',optval) #monitor
+            diff = optval - prevCost
+            prevCost = optval
+            print(solver.problem.status, optval, diff)
+            #xt = deepcopy(x.value) #copy of state trajectory
+          
+        # Obtain the chosen action given the MPC solve
+        kappa = solver.variables.kappa[0].value
+        action[0] = np.arctan(ell*kappa) # steering action
+        SIZE = 0.02
+        mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
+        acc = solver.variables.accel[0].value
+        action[1] = mass*acc # gas action
+        action[2] = 0 # brake action - not used for our purposes
+        
+        # Step through the environment
+        observation, reward, done, info = env.step(action)
+
+        if done:
+            observation = env.reset()
     env.close
