@@ -23,9 +23,9 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    def __init__(self, num_time_steps, duration
-            initial_position: np.ndarray[2], 
-            final_position: np.ndarray[2],
+    def __init__(self, num_time_steps, duration,
+            initial_position: np.ndarray, 
+            final_position: np.ndarray,
             max_jerk: float, 
             max_juke: float, 
             max_velocity: float, 
@@ -58,7 +58,7 @@ class SCPSolver:
             "prev_velocity": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_theta": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_kappa": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_acceleraton": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
+            "prev_acceleration": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
             "prev_pinch": cp.Parameter(shape = num_time_steps+1, value = zeros.copy())
         })
         self.variables = AttrDict.from_dict({
@@ -80,7 +80,7 @@ class SCPSolver:
         """ Get all the variables that encode the input to the system """
         return cp.vstack([
             self.variables.jerk,
-            self.variables.pinch
+            self.variables.juke
         ])
 
     @property
@@ -98,7 +98,7 @@ class SCPSolver:
 
     @property
     def objective(self):
-        input = cp.vstack([self.variables.jerk, self.variables.pinch])
+        input = cp.vstack([self.variables.jerk, self.variables.juke])
         assert input.shape == (2, self.num_time_steps)
         input_norm = cp.norm(input, axis=0)
         assert input_norm.shape == (self.num_time_steps,)
@@ -122,7 +122,7 @@ class SCPSolver:
         prev_veloc = self.parameters.prev_velocity
         prev_theta = self.parameters.prev_theta
         prev_kappa = self.parameters.prev_kappa
-        prev_accel = self.parameters.prev_accel 
+        prev_accel = self.parameters.prev_acceleration 
         prev_pinch = self.parameters.prev_pinch
 
         h = self.constants.time_step_magnitude
@@ -142,11 +142,11 @@ class SCPSolver:
                 ),
             nxt(theta) == curr(theta) + h * (
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
-                    + cp_multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa)))
+                    + cp.multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa))
                 ),
-            nxt(kappa) == prev(kappa) + h * prev(pinch),
-            nxt(accel) == prev(accel) + h * jerk,
-            nxt(pinch) == prev(pinch) + h * juke,
+            nxt(kappa) == curr(kappa) + h * curr(pinch),
+            nxt(accel) == curr(accel) + h * jerk,
+            nxt(pinch) == curr(pinch) + h * juke,
             xpos[0] == self.constants.initial_position[0],
             ypos[0] == self.constants.initial_position[1],
             xpos[-1] == self.constants.final_position[0],
@@ -174,11 +174,22 @@ class SCPSolver:
         return optval
 
 if __name__ == "__main__":
-    solver = SCPSolver(100, 10)
-    solver.solve()
+    solver = SCPSolver(
+        num_time_steps = 100, 
+        duration = 1000, 
+        initial_position=np.zeros(2), 
+        final_position = np.ones(2),
+        max_jerk = 1,
+        max_juke = 1,
+        max_velocity = 1,
+        max_kappa = 1,
+        max_deviation_from_reference = 1
+        )
+    optval = solver.solve()
+    print(optval)
     print(solver.variables.xpos.value)
     print(solver.parameters.prev_xpos.value)
-    
+    """
     env = car_env.CarRacing(
             allow_reverse=True, 
             grayscale=1,
@@ -204,3 +215,4 @@ if __name__ == "__main__":
       if done:
         observation = env.reset()
     env.close
+    """
