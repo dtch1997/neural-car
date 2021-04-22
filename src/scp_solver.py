@@ -381,6 +381,7 @@ def main():
     solver.update_state(initial_state)
 
     for _ in range(1000):
+        env.render()
         cost: float = solver.solve(tol = epsilon, max_iters=1000, verbose=True)
           
         # Obtain the chosen action given the MPC solve
