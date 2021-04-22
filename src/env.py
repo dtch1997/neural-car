@@ -2184,6 +2184,7 @@ class CarRacing(gym.Env, EzPickle):
         idx = self.np_random.randint(0, len(self.track))
         _,beta,x,y = self._get_rnd_position_inside_lane(
                 idx,border=border,direction=direction)
+        beta = 0 # hard-coded
         return [beta, x, y]
 
     def _get_rnd_position_inside_lane(self,idx,border=True,direction=1,discrete=False):
