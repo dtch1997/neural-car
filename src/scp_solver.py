@@ -1,6 +1,7 @@
 import cvxpy as cp
 import numpy as np
 import env as car_env 
+import matplotlib.pyplot as plt
 
 from typing import List, Dict, Tuple
 from copy import deepcopy
@@ -222,7 +223,7 @@ class SCPSolver:
                 ),
             nxt(ypos) == curr(ypos) + h * (
                     cp.multiply(curr(veloc), np.sin(curr(prev_theta).value))
-                    - cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
+                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
                 ),
             nxt(theta) == curr(theta) + h * (
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
@@ -317,7 +318,7 @@ def rotate_by_angle(vec, th):
 def get_current_state(env) -> Dict[str, float]:
     x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    theta = env.car.hull.angle 
+    theta = env.car.hull.angle + np.pi / 2
     vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
     vec2 = rotate_by_angle(np.array([1,0]), theta)
     dot_prod = np.dot(vec1, vec2)
@@ -335,14 +336,9 @@ def get_current_state(env) -> Dict[str, float]:
     }
 
 def plot_trajectory(solver):
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.title("SCP Solver trajectory")
-    plt.scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black')
-    
+    plt.scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
     plt.scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
     plt.scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
-    plt.savefig("scp_trajectory.png")
 
 def main():
     env = car_env.CarRacing(
@@ -364,12 +360,14 @@ def main():
     initial_state['pinch'] = 0
 
     x, y = initial_state['xpos'], initial_state['ypos']
-    final_position = np.array([x + 100, y])
+    theta = initial_state['theta']
+    direction = np.array([np.cos(theta), np.sin(theta)])
+    final_position = np.array([x,y]) + 100 * direction
     
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
-    max_jerk = very_high_value
-    max_juke = very_high_value
+    max_jerk = 100000
+    max_juke = 100000
     max_velocity = 10
     max_kappa = 0.2
     max_deviation_from_reference = very_high_value
@@ -389,12 +387,26 @@ def main():
     )
     solver.update_state(initial_state)
 
-    for _ in range(1000):
+
+    NUM_TIME_STEPS = 50
+    actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
+    first = True
+    fig, ax = plt.subplots(2,3)
+
+    for _ in range(NUM_TIME_STEPS):
         env.render()
         cost: float = solver.solve(tol = epsilon, max_iters=1000, verbose=True)
-        #plot_trajectory(solver)
-        #break
-          
+        
+        if first: 
+            ax[0,0].scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
+            ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
+            ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
+            ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
+            ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
+            ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
+            ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
+            first = False 
+
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
         action[0] = np.arctan(ELL * kappa) # steering action
@@ -412,7 +424,25 @@ def main():
         # Update the solver state
         state: Dict[str, float] = get_current_state(env)
         solver.update_state(state)
+        actual_trajectory[_] = np.array([
+            state['xpos'], 
+            state['ypos'], 
+            state['velocity'], 
+            state['theta'],
+            state['kappa'],
+            state['accel'],
+            state['pinch']
+        ])
     env.close()
+
+    ax[0,0].scatter(actual_trajectory[:,0], actual_trajectory[:,1], c='green', label = "actual trajectory")
+    ax[0,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,2])
+    ax[1,0].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,3])
+    ax[1,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,4])
+    ax[1,2].plot(np.arange(NUM_TIME_STEPS), np.arctan(ELL * actual_trajectory[:,4]))
+
+    plt.show()
+    plt.savefig("scp_trajectory.png")
 
 if __name__ == "__main__":
     main()
