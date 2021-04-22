@@ -293,18 +293,21 @@ class SCPSolver:
             self.previous_trajectory[state_variable_name].value = self.variables[state_variable_name].value
         return optval, diff
 
-    def solve(self, tol = 1e-7, max_iters: int = np.inf) -> float:
+    def solve(self, tol = 1e-7, max_iters: int = np.inf, verbose = False) -> float:
         """ Perform sequential convex solves to find a locally optimal solution
         """
         self.problem = cp.Problem(self.objective, self.constraints)
         num_iters = 0
         diff = tol + 1 
 
+        print("Starting a new SCP solve")
         while diff is None or diff > tol:
             cost, diff = self._convex_solve()
             if num_iters >= max_iters:
                 break 
             num_iters += 1
+            if verbose:
+                print(self.problem.status, cost, diff)
         return cost
             
 
@@ -378,7 +381,7 @@ def main():
     solver.update_state(initial_state)
 
     for _ in range(1000):
-        cost: float = solver.solve(tol = epsilon, max_iters=1000)
+        cost: float = solver.solve(tol = epsilon, max_iters=1000, verbose=True)
           
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
