@@ -310,7 +310,6 @@ class SCPSolver:
                 print(self.problem.status, cost, diff)
         return cost
             
-
 def rotate_by_angle(vec, th):
     M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
     return M@vec
@@ -334,6 +333,16 @@ def get_current_state(env) -> Dict[str, float]:
         "accel": None, 
         "pinch": None
     }
+
+def plot_trajectory(solver):
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.title("SCP Solver trajectory")
+    plt.scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black')
+    
+    plt.scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
+    plt.scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
+    plt.savefig("scp_trajectory.png")
 
 def main():
     env = car_env.CarRacing(
@@ -383,6 +392,8 @@ def main():
     for _ in range(1000):
         env.render()
         cost: float = solver.solve(tol = epsilon, max_iters=1000, verbose=True)
+        #plot_trajectory(solver)
+        #break
           
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
