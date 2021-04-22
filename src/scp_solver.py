@@ -2,9 +2,11 @@ import cvxpy as cp
 import numpy as np
 import env as car_env 
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from copy import deepcopy
 from dataclasses import dataclass
+
+ELL = 80 + 82 # Length of car; defined in neural-car-dynamics global variables
 
 """ Slicing convenience functions """
 def nxt(var: cp.Variable):
@@ -35,22 +37,34 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    def __init__(self, num_time_steps, duration,
-            initial_position: np.ndarray,
+    """ A sequential convex programming solver for the CarRacing OpenAI gym environment 
+    
+    Usage: 
+
+    solver = SCPSolver(...)
+    for time_step in range(MAX_TIME_STEPS):
+
+    """
+
+    state_variable_names = ["xpos", "ypos", "velocity", "theta", "kappa", "accel", "pinch"]
+    input_variable_names = ["jerk", "juke"]
+
+    def __init__(self, 
+            num_time_steps: float,  
+            duration: float,
             final_position: np.ndarray,
             max_jerk: float,
             max_juke: float,
             max_velocity: float,
             max_kappa: float,
             max_deviation_from_reference: float,
-            obstacles: List[Obstacle] = []
+            obstacles: List[Obstacle] = [],
+            solver = cp.SCS
         ):
-        """
-        :param obstacles: A List of (xpos, ypos, radius)
-        """
         self.num_time_steps = num_time_steps
         self.duration = duration
         time_step_magnitude = duration / num_time_steps
+        self.solver = solver
         # Parameter semantics:
         #   State variables:
         #   - self.variables.xpos[0] is the initial state
@@ -59,7 +73,6 @@ class SCPSolver:
 
         self.constants = AttrDict.from_dict({
             "time_step_magnitude": cp.Constant(time_step_magnitude),
-            "initial_position": cp.Constant(initial_position),
             "final_position": cp.Constant(final_position),
             "max_jerk": cp.Constant(max_jerk),
             "max_juke": cp.Constant(max_juke),
@@ -69,36 +82,72 @@ class SCPSolver:
         })
         self.obstacles = obstacles
 
-        zeros = np.zeros(num_time_steps+1)
-        self.parameters = AttrDict.from_dict({
-            "prev_xpos": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_ypos": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_velocity": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_theta": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_kappa": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_accel": cp.Parameter(shape = num_time_steps+1, value = zeros.copy()),
-            "prev_pinch": cp.Parameter(shape = num_time_steps+1, value = zeros.copy())
+        # Store the trajectories of the previous iterate
+        # This has to be feasible!
+        self.previous_trajectory = AttrDict.from_dict({ 
+            state_variable_name: cp.Parameter(shape = num_time_steps+1) \
+                for state_variable_name in self.state_variable_names    
+        })
+        # Current state 
+        self.current_state = AttrDict.from_dict({
+            state_variable_name: cp.Parameter() \
+                for state_variable_name in self.state_variable_names    
         })
         self.variables = AttrDict.from_dict({
-            "xpos": cp.Variable(num_time_steps+1),
-            "ypos": cp.Variable(num_time_steps+1),
-            "velocity" : cp.Variable(num_time_steps+1),
-            "theta" : cp.Variable(num_time_steps+1),
-            "kappa" : cp.Variable(num_time_steps+1),
-            "accel": cp.Variable(num_time_steps+1),
-            "pinch" : cp.Variable(num_time_steps+1),
-            "jerk" : cp.Variable(num_time_steps),
-            "juke" : cp.Variable(num_time_steps),
+            # Note: Idiomatic way to combine two dictionaries
+            **{state_variable_name: cp.Variable(shape = num_time_steps+1) \
+                for state_variable_name in self.state_variable_names},
+            **{input_variable_name: cp.Variable(shape = num_time_steps) \
+                for input_variable_name in self.input_variable_names}       
         })
 
-        self.problem = cp.Problem(self.objective, self.constraints)
+    def update_state(self, values: Dict[str, float], trajectory_init = "zero"):
+        """ Update the current state of the car in the solver 
 
-    def linear_init(self, init_pos, final_pos, velocity, theta, kappa):
-        self.parameters.prev_xpos = np.linspace(init_pos[0], final_pos[0], self.num_time_steps+1)
-        self.parameters.prev_ypos = np.linspace(init_pos[1], final_pos[1], self.num_time_steps+1)
-        self.parameters.prev_velocity = velocity*np.ones(self.num_time_steps+1)
-        self.parameters.prev_theta = theta*np.ones(self.num_time_steps+1)
-        self.parameters.prev_kappa = kappa*np.ones(self.num_time_steps+1)
+        Also initializes a feasible trajectory from that state
+        By default, this is the trajectory obtained by having zero input
+        
+        Usage: 
+            solver.update_state({
+                "xpos": 23.4,
+                "ypos": 14.5,
+                ...
+                "accel": 0.1,
+                "pinch: 1.2
+            })
+        """
+        for key, value in values.items():
+            assert key in self.state_variable_names, "Invalid state variable entered"
+            if value is None:
+                value = self.previous_trajectory[key].value[1]
+            assert value is not None
+            self.current_state[key].value = value       
+
+        if trajectory_init == "zero": 
+            self._init_trajectory_zero()
+        else:
+            raise ValueError(f"Trajectory initializatoin {trajectory_init} not recognized")
+
+    def _init_trajectory_zero(self):
+        """ Initialize the previous trajectory to the trajectory defined by zero input for all time 
+        
+        I.e. car moves with fixed constant velocity 
+        """
+        xpos = self.current_state.xpos.value
+        ypos = self.current_state.ypos.value
+        veloc = self.current_state.velocity.value 
+        theta = self.current_state.theta.value
+        h = self.constants.time_step_magnitude.value
+        # TODO: Ask polo to check this
+        vx, vy = veloc * np.cos(theta), veloc * np.sin(theta)
+
+        self.previous_trajectory.xpos.value = xpos + vx * h * np.arange(self.num_time_steps+1)
+        self.previous_trajectory.ypos.value = ypos + vy * h * np.arange(self.num_time_steps+1)
+        self.previous_trajectory.velocity.value = veloc * np.ones(self.num_time_steps+1)
+        self.previous_trajectory.theta.value = theta * np.ones(self.num_time_steps+1)
+        self.previous_trajectory.kappa.value = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.accel.value = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.pinch.value = np.zeros(self.num_time_steps+1)
         
     @property
     def input(self):
@@ -132,9 +181,12 @@ class SCPSolver:
     def objective(self):
         input = cp.vstack([self.variables.jerk, self.variables.juke])
         assert input.shape == (2, self.num_time_steps)
-        input_norm = cp.norm(input, axis=0)
-        assert input_norm.shape == (self.num_time_steps,)
-        return cp.Minimize(cp.sum(input_norm) + cp.norm(self.position[:,-1] - self.constants.final_position))
+        input_norm_sq = cp.norm(input, axis=0)**2
+        assert input_norm_sq.shape == (self.num_time_steps,)
+        return cp.Minimize(
+            cp.sum(input_norm_sq) \
+            + cp.norm(self.position[:,-1] - self.constants.final_position, p=1)
+        )
 
     @property
     def constraints(self):
@@ -148,21 +200,21 @@ class SCPSolver:
         jerk = self.variables.jerk
         juke = self.variables.juke
 
-        # Previous estimates of state trajectories are stored in self.parameters
-        prev_xpos = self.parameters.prev_xpos
-        prev_ypos = self.parameters.prev_ypos
-        prev_veloc = self.parameters.prev_velocity
-        prev_theta = self.parameters.prev_theta
-        prev_kappa = self.parameters.prev_kappa
-        prev_accel = self.parameters.prev_accel
-        prev_pinch = self.parameters.prev_pinch
+        prev_xpos = self.previous_trajectory.xpos
+        prev_ypos = self.previous_trajectory.ypos
+        prev_veloc = self.previous_trajectory.velocity
+        prev_theta = self.previous_trajectory.theta
+        prev_kappa = self.previous_trajectory.kappa
+        prev_accel = self.previous_trajectory.accel
+        prev_pinch = self.previous_trajectory.pinch
 
         h = self.constants.time_step_magnitude
         r = self.constants.max_deviation_from_reference
         delta_theta = curr(theta) - curr(prev_theta) # 0i - 0i^{(k)}
+
         constraints = []
 
-        """ Add the geometric constraints """
+        """ Add the dynamics constraints """
         constraints += [
             nxt(xpos) == curr(xpos) + h * (
                     cp.multiply(curr(veloc), np.cos(curr(prev_theta).value))
@@ -180,8 +232,20 @@ class SCPSolver:
             nxt(kappa) == curr(kappa) + h * curr(pinch),
             nxt(accel) == curr(accel) + h * jerk,
             nxt(pinch) == curr(pinch) + h * juke,
-            xpos[0] == self.constants.initial_position[0],
-            ypos[0] == self.constants.initial_position[1],
+        ]
+        """ Add the current state constraints """
+        constraints += [
+            xpos[0] == self.current_state.xpos,
+            ypos[0] == self.current_state.ypos,
+            veloc[0] == self.current_state.velocity,
+            theta[0] == self.current_state.theta, 
+            kappa[0] == self.current_state.kappa, 
+            accel[0] == self.current_state.accel, 
+            pinch[0] == self.current_state.pinch
+        ]
+
+        """ Add the control constraints """
+        constraints += [
             #veloc[-1] == 0,
             #xpos[-1] == self.constants.final_position[0],
             #ypos[-1] == self.constants.final_position[1],
@@ -196,43 +260,79 @@ class SCPSolver:
             
         ]
 
-        # Add the max deviation from reference constraint
+        # TODO: Add the max deviation from reference constraint
         constraints += [
 
         ]
 
         return constraints
 
-    def solve(self) -> float:
-        optval = self.problem.solve(solver = cp.SCS)
-        # Initialize the parameters to the values found by solve
-        # This way, the next time we call 'solve' we'll already have the right values
+    def _convex_solve(self) -> Tuple[float, float]:
+        """ 
+        Perform one convex solve as part of SCP
+
+        :return cost: The cost of the current solution         
+        :return diff: The difference in the norm of the input trajectories
+            diff = None if this is the first iteration
+        """
+        diff = None
+        # Store the previous inputs for comparison
+        prev_input = self.input.value
+
+        optval = self.problem.solve(solver = self.solver)
+
         if self.problem.status in ["infeasible", "unbounded"]:
             raise Exception(f"The problem was {self.problem.status}")
-        for param_key in self.parameters.keys():
-            var_key = param_key[5:] # get the corresponding variable
-            self.parameters[param_key].value = self.variables[var_key].value
+        
+        if prev_input is not None:
+            curr_input = self.input.value
+            diff = np.linalg.norm(prev_input - curr_input)
 
-        self.linear_init(
-            self.constants.initial_position.value, 
-            self.constants.final_position.value,
-            self.variables.velocity.value[1],
-            self.variables.theta.value[1],
-            self.variables.kappa.value[1] 
-        )
-        return optval
+        # Update the previous trajectory
+        for state_variable_name in self.state_variable_names:
+            self.previous_trajectory[state_variable_name].value = self.variables[state_variable_name].value
+        return optval, diff
 
-def rotateByAngle(vec, th):
+    def solve(self, tol = 1e-7, max_iters: int = np.inf) -> float:
+        """ Perform sequential convex solves to find a locally optimal solution
+        """
+        self.problem = cp.Problem(self.objective, self.constraints)
+        num_iters = 0
+        diff = tol + 1 
+
+        while diff is None or diff > tol:
+            cost, diff = self._convex_solve()
+            if num_iters >= max_iters:
+                break 
+            num_iters += 1
+        return cost
+            
+
+def rotate_by_angle(vec, th):
     M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
     return M@vec
 
-def updateInitialPosition(env, solver):
+def get_current_state(env) -> Dict[str, float]:
     x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    init_pos = np.array([x,y])
-    solver.constants.initial_position = cp.Constant(init_pos)
+    theta = env.car.hull.angle 
+    vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
+    vec2 = rotate_by_angle(np.array([1,0]), theta)
+    dot_prod = np.dot(vec1, vec2)
+    velocity = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
+    kappa = np.tan(env.car.wheels[0].angle) / ELL
 
-if __name__ == "__main__":
+    return {
+        "xpos": x,
+        "ypos": y,
+        "velocity": velocity,
+        "theta": theta,
+        "kappa": kappa,
+        "accel": None, 
+        "pinch": None
+    }
+
+def main():
     env = car_env.CarRacing(
             allow_reverse=True,
             grayscale=1,
@@ -246,23 +346,13 @@ if __name__ == "__main__":
             frames_per_state=4)
 
     env.reset()  # Put the car at the starting position
+    initial_state = get_current_state(env)
+    # Right now the get_current_state returns None for these
+    initial_state['accel'] = 0
+    initial_state['pinch'] = 0
 
-    # Obtain initial state information
-    x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
-    y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    theta = env.car.hull.angle 
-    vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
-    vec2 = rotateByAngle(np.array([1,0]), theta)
-    dot_prod = np.dot(vec1, vec2)
-    velocity = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
-    print(velocity)
-    ell = 80+82 # Obtained in neural car dynamics global variables
-    kappa = np.tan(env.car.wheels[0].angle)/ell 
-
-    # Default initial position
-    init_pos = np.array([x,y])
-    # Default final position 
-    final_pos = np.array([x+10, y])
+    x, y = initial_state['xpos'], initial_state['ypos']
+    final_position = np.array([x + 100, y])
     
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
@@ -274,29 +364,25 @@ if __name__ == "__main__":
     epsilon = 0.01 #tolerance for convergence of the solution
     action = np.zeros(3)
 
-    solver = SCPSolver(100, 2, init_pos, final_pos,
-        max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
-    # solver.linearInit(init_pos, final_pos, velocity, theta, kappa)
+    solver = SCPSolver(
+        num_time_steps = 100, 
+        duration = 2, 
+        final_position = final_position,
+        max_jerk = max_jerk, 
+        max_juke = max_juke, 
+        max_velocity = max_velocity,
+        max_kappa = max_kappa, 
+        max_deviation_from_reference = max_deviation_from_reference,
+        solver = cp.SCS
+    )
+    solver.update_state(initial_state)
 
     for _ in range(1000):
-        # Linearly interpolate init and final pos
-        updateInitialPosition(env, solver)
-        
-        diff = np.inf #initialize to unreasonable value to overwrite in loop
-        prevCost = -1*np.inf
-        env.render()
-
-        while abs(diff) > epsilon:
-            optval = solver.solve()
-            #print('opt :',optval) #monitor
-            diff = optval - prevCost
-            prevCost = optval
-            print(solver.problem.status, optval, diff)
-            #xt = deepcopy(x.value) #copy of state trajectory
+        cost: float = solver.solve(tol = epsilon, max_iters=1000)
           
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
-        action[0] = np.arctan(ell*kappa) # steering action
+        action[0] = np.arctan(ELL * kappa) # steering action
         SIZE = 0.02
         mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
         acc = solver.variables.accel[0].value
@@ -305,7 +391,13 @@ if __name__ == "__main__":
         
         # Step through the environment
         observation, reward, done, info = env.step(action)
-
         if done:
             observation = env.reset()
-    env.close
+
+        # Update the solver state
+        state: Dict[str, float] = get_current_state(env)
+        solver.update_state(state)
+    env.close()
+
+if __name__ == "__main__":
+    main()

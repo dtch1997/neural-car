@@ -1,0 +1,7 @@
+import cvxpy as cp 
+import numpy as np 
+
+a = np.array([1,2])
+b = cp.Parameter(shape=(2,), value = a) 
+
+print(cp.multiply(a, b).value)
