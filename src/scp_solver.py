@@ -58,6 +58,7 @@ class SCPSolver:
             max_juke: float,
             max_velocity: float,
             max_kappa: float,
+            max_accel: float,
             max_deviation_from_reference: float,
             obstacles: List[Obstacle] = [],
             solver = cp.SCS
@@ -79,6 +80,7 @@ class SCPSolver:
             "max_juke": cp.Constant(max_juke),
             "max_velocity": cp.Constant(max_velocity),
             "max_kappa": cp.Constant(max_kappa),
+            "max_accel": cp.Constant(max_accel),
             "max_deviation_from_reference": cp.Constant(max_deviation_from_reference),
         })
         self.obstacles = obstacles
@@ -250,10 +252,11 @@ class SCPSolver:
             #veloc[-1] == 0,
             #xpos[-1] == self.constants.final_position[0],
             #ypos[-1] == self.constants.final_position[1],
-            cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
-            cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
             cp.norm(kappa, p=np.inf) <= self.constants.max_kappa, 
+            cp.norm(accel, p=np.inf) <= self.constants.max_accel,
+            cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
+            cp.norm(juke, p=np.inf) <= self.constants.max_juke,
         ]
 
         # TODO: Add the obstacle avoidance constraints 
@@ -369,7 +372,7 @@ def main():
     max_jerk = 100000
     max_juke = 100000
     max_velocity = 10
-    max_kappa = 0.2
+    max_kappa = np.tan(0.4) / ELL
     max_deviation_from_reference = very_high_value
     epsilon = 0.01 #tolerance for convergence of the solution
     action = np.zeros(3)
@@ -382,6 +385,7 @@ def main():
         max_juke = max_juke, 
         max_velocity = max_velocity,
         max_kappa = max_kappa, 
+        max_accel = 1,
         max_deviation_from_reference = max_deviation_from_reference,
         solver = cp.SCS
     )
@@ -402,6 +406,7 @@ def main():
             ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
             ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
             ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
+            ax[0,2].plot(np.arange(solver.num_time_steps+1), solver.variables.accel.value)
             ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
             ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
             ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
@@ -409,11 +414,11 @@ def main():
 
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
-        action[0] = np.arctan(ELL * kappa) # steering action
+        action[0] = np.arctan(ELL * kappa) / 0.4 # steering action, rescale
         SIZE = 0.02
         mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
         acc = solver.variables.accel[0].value
-        action[1] = mass*acc # gas action
+        action[1] = acc
         action[2] = 0 # brake action - not used for our purposes
         
         # Step through the environment
