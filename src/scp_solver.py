@@ -319,29 +319,31 @@ def rotate_by_angle(vec, th):
     return M@vec
 
 def get_current_state(env) -> Dict[str, float]:
-    x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
-    y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    theta = env.car.hull.angle + np.pi / 2
+    """ Get the current state from environment
+    
+    All variables should be converted to MPC coordinate system
+    """
+    theta_mpc = env.car.hull.angle + np.pi / 2
     vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
-    vec2 = rotate_by_angle(np.array([1,0]), theta)
+    vec2 = rotate_by_angle(np.array([1,0]), theta_mpc)
     dot_prod = np.dot(vec1, vec2)
-    velocity = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
-    kappa = np.tan(env.car.wheels[0].angle) / ELL
+    velocity_mpc = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
+    kappa_mpc = np.tan(env.car.wheels[0].angle) / ELL
+
+    x_env = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
+    y_env = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
+    x_mpc = y_env 
+    y_mpc = x_env
 
     return {
-        "xpos": x,
-        "ypos": y,
-        "velocity": velocity,
-        "theta": theta,
-        "kappa": kappa,
+        "xpos": x_mpc,
+        "ypos": y_mpc,
+        "velocity": velocity_mpc,
+        "theta": theta_mpc,
+        "kappa": kappa_mpc,
         "accel": None, 
         "pinch": None
     }
-
-def plot_trajectory(solver):
-    plt.scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
-    plt.scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
-    plt.scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
 
 def main():
     env = car_env.CarRacing(
@@ -358,7 +360,6 @@ def main():
 
     env.reset()  # Put the car at the starting position
     initial_state = get_current_state(env)
-    # Right now the get_current_state returns None for these
     initial_state['accel'] = 0
     initial_state['pinch'] = 0
 
@@ -373,6 +374,7 @@ def main():
     max_juke = 100000
     max_velocity = 10
     max_kappa = np.tan(0.4) / ELL
+    max_accel = 1
     max_deviation_from_reference = very_high_value
     epsilon = 0.01 #tolerance for convergence of the solution
     action = np.zeros(3)
@@ -385,7 +387,7 @@ def main():
         max_juke = max_juke, 
         max_velocity = max_velocity,
         max_kappa = max_kappa, 
-        max_accel = 1,
+        max_accel = max_accel,
         max_deviation_from_reference = max_deviation_from_reference,
         solver = cp.SCS
     )
@@ -403,8 +405,8 @@ def main():
         
         if first: 
             ax[0,0].scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
-            ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=10, c='blue')
-            ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=10, c='red')
+            ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=30, c='blue')
+            ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
             ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
             ax[0,2].plot(np.arange(solver.num_time_steps+1), solver.variables.accel.value)
             ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
@@ -429,9 +431,11 @@ def main():
         # Update the solver state
         state: Dict[str, float] = get_current_state(env)
         solver.update_state(state)
+        
+        # Plot the trajectory in the MPC coordinates
         actual_trajectory[_] = np.array([
             state['xpos'], 
-            state['ypos'], 
+            state['ypos'],
             state['velocity'], 
             state['theta'],
             state['kappa'],
