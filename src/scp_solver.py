@@ -1,6 +1,6 @@
 import cvxpy as cp
 import numpy as np
-import env as car_env 
+import env as car_env
 import matplotlib.pyplot as plt
 
 from typing import List, Dict, Tuple
@@ -18,7 +18,7 @@ def curr(var: cp.Variable):
 
 @dataclass
 class Obstacle:
-    xpos: float 
+    xpos: float
     ypos: float
     radius: float
 
@@ -39,9 +39,9 @@ class AttrDict(Dict):
         return attrdict
 
 class SCPSolver:
-    """ A sequential convex programming solver for the CarRacing OpenAI gym environment 
-    
-    Usage: 
+    """ A sequential convex programming solver for the CarRacing OpenAI gym environment
+
+    Usage:
 
     solver = SCPSolver(...)
     for time_step in range(MAX_TIME_STEPS):
@@ -51,8 +51,8 @@ class SCPSolver:
     state_variable_names = ["xpos", "ypos", "velocity", "theta", "kappa", "accel", "pinch"]
     input_variable_names = ["jerk", "juke"]
 
-    def __init__(self, 
-            num_time_steps: float,  
+    def __init__(self,
+            num_time_steps: float,
             duration: float,
             final_position: np.ndarray,
             max_jerk: float,
@@ -90,30 +90,30 @@ class SCPSolver:
 
         # Store the trajectories of the previous iterate
         # This has to be feasible!
-        self.previous_trajectory = AttrDict.from_dict({ 
+        self.previous_trajectory = AttrDict.from_dict({
             state_variable_name: cp.Parameter(shape = num_time_steps+1) \
-                for state_variable_name in self.state_variable_names    
+                for state_variable_name in self.state_variable_names
         })
-        # Current state 
+        # Current state
         self.current_state = AttrDict.from_dict({
             state_variable_name: cp.Parameter() \
-                for state_variable_name in self.state_variable_names    
+                for state_variable_name in self.state_variable_names
         })
         self.variables = AttrDict.from_dict({
             # Note: Idiomatic way to combine two dictionaries
             **{state_variable_name: cp.Variable(shape = num_time_steps+1) \
                 for state_variable_name in self.state_variable_names},
             **{input_variable_name: cp.Variable(shape = num_time_steps) \
-                for input_variable_name in self.input_variable_names}       
+                for input_variable_name in self.input_variable_names}
         })
 
     def update_state(self, values: Dict[str, float], trajectory_init = "zero"):
-        """ Update the current state of the car in the solver 
+        """ Update the current state of the car in the solver
 
         Also initializes a feasible trajectory from that state
         By default, this is the trajectory obtained by having zero input
-        
-        Usage: 
+
+        Usage:
             solver.update_state({
                 "xpos": 23.4,
                 "ypos": 14.5,
@@ -127,21 +127,21 @@ class SCPSolver:
             if value is None:
                 value = self.previous_trajectory[key].value[1]
             assert value is not None
-            self.current_state[key].value = value       
+            self.current_state[key].value = value
 
-        if trajectory_init == "zero": 
+        if trajectory_init == "zero":
             self._init_trajectory_zero()
         else:
             raise ValueError(f"Trajectory initializatoin {trajectory_init} not recognized")
 
     def _init_trajectory_zero(self):
-        """ Initialize the previous trajectory to the trajectory defined by zero input for all time 
-        
-        I.e. car moves with fixed constant velocity 
+        """ Initialize the previous trajectory to the trajectory defined by zero input for all time
+
+        I.e. car moves with fixed constant velocity
         """
         xpos = self.current_state.xpos.value
         ypos = self.current_state.ypos.value
-        veloc = self.current_state.velocity.value 
+        veloc = self.current_state.velocity.value
         theta = self.current_state.theta.value
         h = self.constants.time_step_magnitude.value
         # TODO: Ask polo to check this
@@ -154,7 +154,7 @@ class SCPSolver:
         self.previous_trajectory.kappa.value = np.zeros(self.num_time_steps+1)
         self.previous_trajectory.accel.value = np.zeros(self.num_time_steps+1)
         self.previous_trajectory.pinch.value = np.zeros(self.num_time_steps+1)
-        
+
     @property
     def input(self):
         """ Get all the variables that encode the input to the system """
@@ -163,7 +163,7 @@ class SCPSolver:
             self.variables.juke
         ])
 
-    @property 
+    @property
     def position(self):
         return cp.vstack([
             self.variables.xpos,
@@ -193,7 +193,7 @@ class SCPSolver:
         assert input_norm_sq.shape == (self.num_time_steps,)
         return cp.Minimize(
             cp.sum(input_norm_sq) \
-            + cp.norm(self.position[:,-1] - self.constants.final_position, p=1) 
+            + cp.norm(self.position[:,-1] - self.constants.final_position, p=1)
         )
 
     @property
@@ -246,9 +246,9 @@ class SCPSolver:
             xpos[0] == self.current_state.xpos,
             ypos[0] == self.current_state.ypos,
             veloc[0] == self.current_state.velocity,
-            theta[0] == self.current_state.theta, 
-            kappa[0] == self.current_state.kappa, 
-            accel[0] == self.current_state.accel, 
+            theta[0] == self.current_state.theta,
+            kappa[0] == self.current_state.kappa,
+            accel[0] == self.current_state.accel,
             pinch[0] == self.current_state.pinch
         ]
 
@@ -258,16 +258,16 @@ class SCPSolver:
             #xpos[-1] == self.constants.final_position[0],
             #ypos[-1] == self.constants.final_position[1],
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
-            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa, 
+            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa,
             cp.norm(accel, p=np.inf) <= self.constants.max_accel,
             cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
             cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(pinch, p=np.inf) <= self.constants.max_pinch,
         ]
 
-        # TODO: Add the obstacle avoidance constraints 
+        # TODO: Add the obstacle avoidance constraints
         constraints += [
-            
+
         ]
 
         # TODO: Add the max deviation from reference constraint
@@ -278,10 +278,10 @@ class SCPSolver:
         return constraints
 
     def _convex_solve(self) -> Tuple[float, float]:
-        """ 
+        """
         Perform one convex solve as part of SCP
 
-        :return cost: The cost of the current solution         
+        :return cost: The cost of the current solution
         :return diff: The difference in the norm of the input trajectories
             diff = None if this is the first iteration
         """
@@ -293,7 +293,7 @@ class SCPSolver:
 
         if self.problem.status in ["infeasible", "unbounded"]:
             raise Exception(f"The problem was {self.problem.status}")
-        
+
         if prev_input is not None:
             curr_input = self.input.value
             diff = np.linalg.norm(prev_input - curr_input)
@@ -308,25 +308,25 @@ class SCPSolver:
         """
         self.problem = cp.Problem(self.objective, self.constraints)
         num_iters = 0
-        diff = tol + 1 
+        diff = tol + 1
 
         print("Starting a new SCP solve")
         while diff is None or diff > tol:
             cost, diff = self._convex_solve()
             if num_iters >= max_iters:
-                break 
+                break
             num_iters += 1
             if verbose:
                 print(self.problem.status, cost, diff)
         return cost
-            
+
 def rotate_by_angle(vec, th):
     M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
     return M@vec
 
 def get_current_state(env) -> Dict[str, float]:
     """ Get the current state from environment
-    
+
     All variables should be converted to MPC coordinate system
     """
     theta_mpc = env.car.hull.angle + np.pi / 2
@@ -340,9 +340,9 @@ def get_current_state(env) -> Dict[str, float]:
 
     x_env = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y_env = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    #x_mpc = y_env 
+    #x_mpc = y_env
     #y_mpc = -x_env
-    x_mpc = x_env 
+    x_mpc = x_env
     y_mpc = y_env
 
     return {
@@ -351,7 +351,7 @@ def get_current_state(env) -> Dict[str, float]:
         "velocity": velocity_mpc,
         "theta": theta_mpc,
         "kappa": kappa_mpc,
-        "accel": None, 
+        "accel": None,
         "pinch": None
     }
 
@@ -378,12 +378,12 @@ def main():
     direction = np.array([np.cos(theta), np.sin(theta),0,0])
     orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
     final_position = np.array([x,y,0,theta]) + 10 * direction + 10 * orth_direction
-    
+
     print("Initial x: ",x)
     print("Initial y: ", y)
     print("Final x: ", final_position[0])
     print("Final y: ", final_position[1])
-    
+
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
     max_jerk = very_high_value #100000
@@ -397,13 +397,13 @@ def main():
     action = np.zeros(3)
 
     solver = SCPSolver(
-        num_time_steps = 100, 
-        duration = 2, 
+        num_time_steps = 100,
+        duration = 2,
         final_position = final_position,
-        max_jerk = max_jerk, 
-        max_juke = max_juke, 
+        max_jerk = max_jerk,
+        max_juke = max_juke,
         max_velocity = max_velocity,
-        max_kappa = max_kappa, 
+        max_kappa = max_kappa,
         max_accel = max_accel,
         max_pinch = max_pinch,
         max_deviation_from_reference = max_deviation_from_reference,
@@ -422,10 +422,10 @@ def main():
 
     for _ in range(NUM_TIME_STEPS):
         env.render()
-        
+
         cost: float = solver.solve(tol = epsilon, max_iters=1000, verbose=True)
-        
-        if first: 
+
+        if first:
             ax[0,0].scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
             ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=30, c='blue')
             ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
@@ -434,7 +434,7 @@ def main():
             ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
             ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
             ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
-            first = False 
+            first = False
 
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
@@ -444,7 +444,7 @@ def main():
         acc = solver.variables.accel[0].value
         action[1] = alpha*acc
         action[2] = 0 # brake action - not used for our purposes
-        
+
         """
         action[0] = -1
         action[1] = 0
@@ -458,18 +458,18 @@ def main():
         # Update the solver state
         state: Dict[str, float] = get_current_state(env)
         solver.update_state(state)
-        
+
         # Plot the trajectory in the MPC coordinates
         actual_trajectory[_] = np.array([
-            state['xpos'], 
+            state['xpos'],
             state['ypos'],
-            state['velocity'], 
+            state['velocity'],
             state['theta'],
             state['kappa'],
             state['accel'],
             state['pinch']
         ])
-        
+
         #print("Current x: ", state['xpos'])
         #print("Current y: ", state['ypos'])
         #print(np.arctan(162*state['kappa']))
@@ -477,18 +477,18 @@ def main():
         derivative[_] = (state['velocity'] - prev_velocity)/solver.constants.time_step_magnitude.value
         prev_velocity = state['velocity']
         """
-        
-        
+
+
     env.close()
     #print(derivative)
-    
+
     ax[0,0].scatter(actual_trajectory[:,0], actual_trajectory[:,1], c='green', label = "actual trajectory")
     ax[0,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,2])
     ax[1,0].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,3])
     ax[1,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,4])
     ax[1,2].plot(np.arange(NUM_TIME_STEPS), np.arctan(ELL * actual_trajectory[:,4]))
-    
-    
+
+
     plt.show()
     plt.savefig("scp_trajectory.png")
 
