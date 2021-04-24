@@ -164,7 +164,9 @@ class SCPSolver:
     def position(self):
         return cp.vstack([
             self.variables.xpos,
-            self.variables.ypos
+            self.variables.ypos,
+            self.variables.velocity,
+            self.variables.theta
         ])
 
     @property
@@ -188,7 +190,7 @@ class SCPSolver:
         assert input_norm_sq.shape == (self.num_time_steps,)
         return cp.Minimize(
             cp.sum(input_norm_sq) \
-            + cp.norm(self.position[:,-1] - self.constants.final_position, p=1)
+            + cp.norm(self.position[:,-1] - self.constants.final_position, p=1) 
         )
 
     @property
@@ -327,13 +329,17 @@ def get_current_state(env) -> Dict[str, float]:
     vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
     vec2 = rotate_by_angle(np.array([1,0]), theta_mpc)
     dot_prod = np.dot(vec1, vec2)
-    velocity_mpc = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
+    #velocity_mpc = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
+    # We should only count the forward velocity
+    velocity_mpc = dot_prod
     kappa_mpc = np.tan(env.car.wheels[0].angle) / ELL
 
     x_env = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y_env = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    x_mpc = y_env 
-    y_mpc = x_env
+    #x_mpc = y_env 
+    #y_mpc = -x_env
+    x_mpc = x_env 
+    y_mpc = y_env
 
     return {
         "xpos": x_mpc,
@@ -365,13 +371,18 @@ def main():
 
     x, y = initial_state['xpos'], initial_state['ypos']
     theta = initial_state['theta']
-    direction = np.array([np.cos(theta), np.sin(theta)])
-    final_position = np.array([x,y]) + 100 * direction
+    direction = np.array([np.cos(theta), np.sin(theta),0,0])
+    final_position = np.array([x,y,0,np.pi/2]) + 10 * direction
+    
+    print("Initial x: ",x)
+    print("Initial y: ", y)
+    print("Final x: ", final_position[0])
+    print("Final y: ", final_position[1])
     
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
-    max_jerk = 100000
-    max_juke = 100000
+    max_jerk = very_high_value #100000
+    max_juke = very_high_value #100000
     max_velocity = 10
     max_kappa = np.tan(0.4) / ELL
     max_accel = 1
@@ -394,7 +405,7 @@ def main():
     solver.update_state(initial_state)
 
 
-    NUM_TIME_STEPS = 50
+    NUM_TIME_STEPS = 100
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
@@ -419,7 +430,8 @@ def main():
         action[0] = np.arctan(ELL * kappa) / 0.4 # steering action, rescale
         SIZE = 0.02
         mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
-        acc = solver.variables.accel[0].value
+        alpha = 0.01
+        acc = alpha*solver.variables.accel[0].value
         action[1] = acc
         action[2] = 0 # brake action - not used for our purposes
         
@@ -442,6 +454,9 @@ def main():
             state['accel'],
             state['pinch']
         ])
+        
+        print("Current x: ", state['xpos'])
+        print("Current y: ", state['ypos'])
     env.close()
 
     ax[0,0].scatter(actual_trajectory[:,0], actual_trajectory[:,1], c='green', label = "actual trajectory")
