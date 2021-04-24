@@ -372,7 +372,7 @@ def main():
     x, y = initial_state['xpos'], initial_state['ypos']
     theta = initial_state['theta']
     direction = np.array([np.cos(theta), np.sin(theta),0,0])
-    final_position = np.array([x,y,0,np.pi/2]) + 10 * direction
+    final_position = np.array([x,y,0,theta]) + 100 * direction
     
     print("Initial x: ",x)
     print("Initial y: ", y)
@@ -404,8 +404,7 @@ def main():
     )
     solver.update_state(initial_state)
 
-
-    NUM_TIME_STEPS = 100
+    NUM_TIME_STEPS = 500
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
