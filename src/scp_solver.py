@@ -61,6 +61,7 @@ class SCPSolver:
             max_kappa: float,
             max_accel: float,
             max_pinch: float,
+            max_theta: float,
             max_deviation_from_reference: float,
             obstacles: List[Obstacle] = [],
             solver = cp.SCS
@@ -74,7 +75,7 @@ class SCPSolver:
         #   - self.variables.xpos[0] is the initial state
         #   Inputs:
         #   - state[t+1] = f(state[t], input[t])
-
+        """
         self.constants = AttrDict.from_dict({
             "time_step_magnitude": cp.Constant(time_step_magnitude),
             "final_position": cp.Constant(final_position),
@@ -84,7 +85,21 @@ class SCPSolver:
             "max_kappa": cp.Constant(max_kappa),
             "max_accel": cp.Constant(max_accel),
             "max_pinch": cp.Constant(max_pinch),
+            "max_theta": cp.Constant(max_theta),
             "max_deviation_from_reference": cp.Constant(max_deviation_from_reference),
+        })
+        """
+        self.constants = AttrDict.from_dict({
+            "time_step_magnitude": time_step_magnitude,
+            "final_position": final_position,
+            "max_jerk": max_jerk,
+            "max_juke": max_juke,
+            "max_velocity": max_velocity,
+            "max_kappa": max_kappa,
+            "max_accel": max_accel,
+            "max_pinch": max_pinch,
+            "max_theta": max_theta,
+            "max_deviation_from_reference": max_deviation_from_reference,
         })
         self.obstacles = obstacles
 
@@ -143,7 +158,8 @@ class SCPSolver:
         ypos = self.current_state.ypos.value
         veloc = self.current_state.velocity.value
         theta = self.current_state.theta.value
-        h = self.constants.time_step_magnitude.value
+        #h = self.constants.time_step_magnitude.value
+        h = self.constants.time_step_magnitude
         # TODO: Ask polo to check this
         vx, vy = veloc * np.cos(theta), veloc * np.sin(theta)
 
@@ -223,17 +239,39 @@ class SCPSolver:
         constraints = []
 
         """ Add the dynamics constraints """
+        """
         constraints += [
             nxt(xpos) == curr(xpos) + h * (
-                    cp.multiply(curr(veloc), np.cos(curr(prev_theta).value))
-                    - cp.multiply(cp.multiply(curr(prev_veloc), np.sin(curr(prev_theta).value)), delta_theta)
+                    cp.multiply(curr(veloc), cp.cos(curr(prev_theta)))
+                    - cp.multiply(cp.multiply(curr(prev_veloc), np.sin(curr(prev_theta.value))), delta_theta)
                 ),
             nxt(ypos) == curr(ypos) + h * (
-                    cp.multiply(curr(veloc), np.sin(curr(prev_theta).value))
-                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
+                    cp.multiply(curr(veloc), np.sin(curr(prev_theta.value)))
+                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta.value))), delta_theta)
                 ),
             nxt(theta) == curr(theta) + h * (
-                    cp.multiply(curr(veloc), curr(prev_kappa.value))
+                    cp.multiply(curr(prev_veloc), curr(prev_kappa)) 
+                    + cp.multiply(curr(prev_kappa), curr(veloc) - curr(prev_veloc))
+                    + cp.multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa))
+                ),
+            nxt(veloc) == curr(veloc) + h * curr(accel),
+            nxt(kappa) == curr(kappa) + h * curr(pinch),
+            nxt(accel) == curr(accel) + h * jerk,
+            nxt(pinch) == curr(pinch) + h * juke,
+        ]
+        """
+        constraints += [
+            nxt(xpos) == curr(xpos) + h * (
+                    cp.multiply(curr(veloc), np.cos(curr(prev_theta.value)))
+                    - cp.multiply(np.multiply(curr(prev_veloc.value), np.sin(curr(prev_theta.value))), delta_theta)
+                ),
+            nxt(ypos) == curr(ypos) + h * (
+                    cp.multiply(curr(veloc), np.sin(curr(prev_theta.value)))
+                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta.value))), delta_theta)
+                ),
+            nxt(theta) == curr(theta) + h * (
+                    cp.multiply(curr(prev_veloc), curr(prev_kappa)) 
+                    + cp.multiply(curr(prev_kappa), curr(veloc) - curr(prev_veloc))
                     + cp.multiply(curr(prev_veloc), curr(kappa) - curr(prev_kappa))
                 ),
             nxt(veloc) == curr(veloc) + h * curr(accel),
@@ -258,11 +296,15 @@ class SCPSolver:
             #xpos[-1] == self.constants.final_position[0],
             #ypos[-1] == self.constants.final_position[1],
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
-            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa,
+            #cp.norm(kappa, p=np.inf) <= self.constants.max_kappa,
+            kappa <= self.constants.max_kappa,
+            kappa >= -self.constants.max_kappa,
             cp.norm(accel, p=np.inf) <= self.constants.max_accel,
             cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
             cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(pinch, p=np.inf) <= self.constants.max_pinch,
+            theta <= self.constants.max_theta,
+            theta >= -self.constants.max_theta
         ]
 
         # TODO: Add the obstacle avoidance constraints
@@ -389,12 +431,14 @@ def main():
     max_jerk = very_high_value #100000
     max_juke = very_high_value #100000
     max_velocity = 10
-    max_kappa = np.tan(0.4) / ELL
+    max_kappa = np.tan(0.4200316) / ELL
+
     max_accel = 1
-    max_pinch = 0.0185
+    max_pinch = 3/ELL
     max_deviation_from_reference = very_high_value
     epsilon = 0.01 #tolerance for convergence of the solution
     action = np.zeros(3)
+    max_theta = np.pi
 
     solver = SCPSolver(
         num_time_steps = 100,
@@ -406,13 +450,14 @@ def main():
         max_kappa = max_kappa,
         max_accel = max_accel,
         max_pinch = max_pinch,
+        max_theta = max_theta,
         max_deviation_from_reference = max_deviation_from_reference,
         solver = cp.SCS
     )
     solver.update_state(initial_state)
 
 
-    NUM_TIME_STEPS = 300
+    NUM_TIME_STEPS = 100
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
@@ -428,14 +473,18 @@ def main():
         if first:
             ax[0,0].scatter(solver.variables.xpos.value, solver.variables.ypos.value, c='black', label = 'Planned trajectory')
             ax[0,0].scatter(solver.current_state.xpos.value, solver.current_state.ypos.value, s=30, c='blue')
-            ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
+            #ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
+            ax[0,0].scatter(solver.constants.final_position[0], solver.constants.final_position[1], s=30, c='red')
             ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
             ax[0,2].plot(np.arange(solver.num_time_steps+1), solver.variables.accel.value)
             ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
             ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
             ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
+            print("theta below")
+            print(solver.variables.theta.value)
+            
             first = False
-
+        
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
         action[0] = np.arctan(ELL * kappa) / -0.4200316 # steering action, rescale
@@ -444,10 +493,10 @@ def main():
         acc = solver.variables.accel[0].value
         action[1] = alpha*acc
         action[2] = 0 # brake action - not used for our purposes
-
+        
         """
-        action[0] = -1
-        action[1] = 0
+        action[0] = 0
+        action[1] = 1
         action[2] = 0
         """
         # Step through the environment
@@ -472,6 +521,8 @@ def main():
 
         #print("Current x: ", state['xpos'])
         #print("Current y: ", state['ypos'])
+        #print("Current vel: ", env.car.hull.linearVelocity)
+        #print("Current angle:", env.car.hull.angle + np.pi / 2)
         #print(np.arctan(162*state['kappa']))
         """
         derivative[_] = (state['velocity'] - prev_velocity)/solver.constants.time_step_magnitude.value
