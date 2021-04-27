@@ -1,6 +1,6 @@
 import cvxpy as cp
 import numpy as np
-import env as car_env 
+import env as car_env
 
 from typing import List, Dict
 from copy import deepcopy
@@ -14,7 +14,7 @@ def curr(var: cp.Variable):
 
 @dataclass
 class Obstacle:
-    xpos: float 
+    xpos: float
     ypos: float
     radius: float
 
@@ -99,7 +99,7 @@ class SCPSolver:
         self.parameters.prev_velocity = velocity*np.ones(self.num_time_steps+1)
         self.parameters.prev_theta = theta*np.ones(self.num_time_steps+1)
         self.parameters.prev_kappa = kappa*np.ones(self.num_time_steps+1)
-        
+
     @property
     def input(self):
         """ Get all the variables that encode the input to the system """
@@ -108,7 +108,7 @@ class SCPSolver:
             self.variables.juke
         ])
 
-    @property 
+    @property
     def position(self):
         return cp.vstack([
             self.variables.xpos,
@@ -170,7 +170,7 @@ class SCPSolver:
                 ),
             nxt(ypos) == curr(ypos) + h * (
                     cp.multiply(curr(veloc), np.sin(curr(prev_theta).value))
-                    - cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
+                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta).value)), delta_theta)
                 ),
             nxt(theta) == curr(theta) + h * (
                     cp.multiply(curr(veloc), curr(prev_kappa.value))
@@ -188,12 +188,12 @@ class SCPSolver:
             cp.norm(jerk, p=np.inf) <= self.constants.max_jerk,
             cp.norm(juke, p=np.inf) <= self.constants.max_juke,
             cp.norm(veloc, p=np.inf) <= self.constants.max_velocity,
-            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa, 
+            cp.norm(kappa, p=np.inf) <= self.constants.max_kappa,
         ]
 
-        # TODO: Add the obstacle avoidance constraints 
+        # TODO: Add the obstacle avoidance constraints
         constraints += [
-            
+
         ]
 
         # Add the max deviation from reference constraint
@@ -214,11 +214,11 @@ class SCPSolver:
             self.parameters[param_key].value = self.variables[var_key].value
 
         self.linear_init(
-            self.constants.initial_position.value, 
+            self.constants.initial_position.value,
             self.constants.final_position.value,
             self.variables.velocity.value[1],
             self.variables.theta.value[1],
-            self.variables.kappa.value[1] 
+            self.variables.kappa.value[1]
         )
         return optval
 
@@ -250,20 +250,20 @@ if __name__ == "__main__":
     # Obtain initial state information
     x = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
-    theta = env.car.hull.angle 
+    theta = env.car.hull.angle
     vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
     vec2 = rotateByAngle(np.array([1,0]), theta)
     dot_prod = np.dot(vec1, vec2)
     velocity = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
     print(velocity)
     ell = 80+82 # Obtained in neural car dynamics global variables
-    kappa = np.tan(env.car.wheels[0].angle)/ell 
+    kappa = np.tan(env.car.wheels[0].angle)/ell
 
     # Default initial position
     init_pos = np.array([x,y])
-    # Default final position 
+    # Default final position
     final_pos = np.array([x+10, y])
-    
+
     # Initialize to very high value until further notice
     very_high_value = 10**(14)
     max_jerk = very_high_value
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     for _ in range(1000):
         # Linearly interpolate init and final pos
         updateInitialPosition(env, solver)
-        
+
         diff = np.inf #initialize to unreasonable value to overwrite in loop
         prevCost = -1*np.inf
         env.render()
@@ -293,7 +293,7 @@ if __name__ == "__main__":
             prevCost = optval
             print(solver.problem.status, optval, diff)
             #xt = deepcopy(x.value) #copy of state trajectory
-          
+
         # Obtain the chosen action given the MPC solve
         kappa = solver.variables.kappa[0].value
         action[0] = np.arctan(ell*kappa) # steering action
@@ -302,7 +302,7 @@ if __name__ == "__main__":
         acc = solver.variables.accel[0].value
         action[1] = mass*acc # gas action
         action[2] = 0 # brake action - not used for our purposes
-        
+
         # Step through the environment
         observation, reward, done, info = env.step(action)
 
