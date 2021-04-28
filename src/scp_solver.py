@@ -311,7 +311,7 @@ class NLPSolver:
             J[accel_idx+k,accel_idx+k+1] = -1
             J[accel_idx+k,jerk_idx+k] = h
         
-        return J
+        return J.T
 
     def constraints(self, x):
         self.establish_variables(x)
@@ -443,6 +443,9 @@ if __name__ == "__main__":
     n = 7*(solver.num_time_steps+1)+2*(solver.num_time_steps)
     m = 7*(solver.num_time_steps)
 
+    print("the number of variables is....")
+    print(n)
+
     increment = solver.num_time_steps + 1
     xpos_idx = increment*0
     ypos_idx = increment*1
@@ -454,7 +457,6 @@ if __name__ == "__main__":
     increment2 = solver.num_time_steps
     jerk_idx = increment*7
     juke_idx = increment*7+increment2
-
 
     lb = -np.inf*np.ones(n)
     lb[xpos_idx] = solver.current_state["xpos"]
