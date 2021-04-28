@@ -1,4 +1,5 @@
-import cvxpy as cp
+#import cvxpy as cp
+import cyipopt
 import numpy as np
 import env as car_env
 
@@ -7,9 +8,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 """ Slicing convenience functions """
-def nxt(var: cp.Variable):
+def nxt(var: np.array):
     return var[1:]
-def curr(var: cp.Variable):
+def curr(var: np.array):
     return var[:-1]
 
 @dataclass
@@ -34,9 +35,28 @@ class AttrDict(Dict):
             attrdict[key] = value # Calls __setitem_
         return attrdict
 
+<<<<<<< Updated upstream
 class SCPSolver:
     def __init__(self, num_time_steps, duration,
             initial_position: np.ndarray,
+=======
+class NLPSolver:
+    """ A sequential convex programming solver for the CarRacing OpenAI gym environment
+
+    Usage:
+
+    solver = SCPSolver(...)
+    for time_step in range(MAX_TIME_STEPS):
+
+    """
+
+    state_variable_names = ["xpos", "ypos", "velocity", "theta", "kappa", "accel", "pinch"]
+    input_variable_names = ["jerk", "juke"]
+
+    def __init__(self,
+            num_time_steps: float,
+            duration: float,
+>>>>>>> Stashed changes
             final_position: np.ndarray,
             max_jerk: float,
             max_juke: float,
@@ -51,6 +71,10 @@ class SCPSolver:
         self.num_time_steps = num_time_steps
         self.duration = duration
         time_step_magnitude = duration / num_time_steps
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
         # Parameter semantics:
         #   State variables:
         #   - self.variables.xpos[0] is the initial state
@@ -58,6 +82,7 @@ class SCPSolver:
         #   - state[t+1] = f(state[t], input[t])
 
         self.constants = AttrDict.from_dict({
+<<<<<<< Updated upstream
             "time_step_magnitude": cp.Constant(time_step_magnitude),
             "initial_position": cp.Constant(initial_position),
             "final_position": cp.Constant(final_position),
@@ -99,18 +124,111 @@ class SCPSolver:
         self.parameters.prev_velocity = velocity*np.ones(self.num_time_steps+1)
         self.parameters.prev_theta = theta*np.ones(self.num_time_steps+1)
         self.parameters.prev_kappa = kappa*np.ones(self.num_time_steps+1)
+=======
+            "time_step_magnitude": time_step_magnitude,
+            "final_position": final_position,
+            "max_jerk": max_jerk,
+            "max_juke": max_juke,
+            "max_velocity": max_velocity,
+            "max_kappa": max_kappa,
+            "max_accel": max_accel,
+            "max_pinch": max_pinch,
+            "max_theta": max_theta,
+            "max_deviation_from_reference": max_deviation_from_reference,
+        })
+        self.obstacles = obstacles
+
+        self.previous_trajectory = AttrDict.from_dict({
+            state_variable_name: np.zeros(num_time_steps+1) \
+                for state_variable_name in self.state_variable_names
+        })
+        # Current state
+        self.current_state = AttrDict.from_dict({
+            state_variable_name: np.zeros(1) \
+                for state_variable_name in self.state_variable_names
+        })
+        self.variables = AttrDict.from_dict({
+            # Note: Idiomatic way to combine two dictionaries
+            **{state_variable_name: np.zeros(num_time_steps+1) \
+                for state_variable_name in self.state_variable_names},
+            **{input_variable_name: np.zeros(num_time_steps) \
+                for input_variable_name in self.input_variable_names}
+        })
+
+    def update_state(self, values: Dict[str, float], trajectory_init = "zero"):
+        """ Update the current state of the car in the solver
+
+        Also initializes a feasible trajectory from that state
+        By default, this is the trajectory obtained by having zero input
+
+        Usage:
+            solver.update_state({
+                "xpos": 23.4,
+                "ypos": 14.5,
+                ...
+                "accel": 0.1,
+                "pinch: 1.2
+            })
+        """
+        for key, value in values.items():
+            assert key in self.state_variable_names, "Invalid state variable entered"
+            if value is None:
+                value = self.previous_trajectory[key][1]
+            assert value is not None
+            self.current_state[key] = value
+
+        if trajectory_init == "zero":
+            self._init_trajectory_zero()
+        else:
+            raise ValueError(f"Trajectory initializatoin {trajectory_init} not recognized")
+
+    def _init_trajectory_zero(self):
+        """ Initialize the previous trajectory to the trajectory defined by zero input for all time
+
+        I.e. car moves with fixed constant velocity
+        """
+        xpos = self.current_state.xpos
+        ypos = self.current_state.ypos
+        veloc = self.current_state.velocity
+        theta = self.current_state.theta
+        #h = self.constants.time_step_magnitude.value
+        h = self.constants.time_step_magnitude
+        # TODO: Ask polo to check this
+        vx, vy = veloc * np.cos(theta), veloc * np.sin(theta)
+        
+        self.previous_trajectory.xpos = xpos + vx * h * np.arange(self.num_time_steps+1)
+        self.previous_trajectory.ypos = ypos + vy * h * np.arange(self.num_time_steps+1)
+        self.previous_trajectory.velocity = veloc * np.ones(self.num_time_steps+1)
+        self.previous_trajectory.theta = theta * np.ones(self.num_time_steps+1)
+        self.previous_trajectory.kappa = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.accel = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.pinch = np.zeros(self.num_time_steps+1)
+
+    def establish_variables(self, x):
+        increment = self.num_time_steps + 1
+        self.variables.xpos = x[increment*0:increment*1]
+        self.variables.ypos = x[increment*1:increment*2]
+        self.variables.velocity = x[increment*2:increment*3]
+        self.variables.theta = x[increment*3:increment*4]
+        self.variables.kappa = x[increment*4:increment*5]
+        self.variables.accel = x[increment*5:increment*6]
+        self.variables.pinch = x[increment*6:increment*7]
+        increment2 = self.num_time_steps
+        self.variables.jerk = x[increment*7:increment*7+increment2]
+        self.variables.juke = x[increment*7+increment2:increment*7+2*increment2]
+>>>>>>> Stashed changes
 
     @property
     def input(self):
         """ Get all the variables that encode the input to the system """
-        return cp.vstack([
+        return np.vstack([
             self.variables.jerk,
             self.variables.juke
         ])
 
     @property
     def position(self):
-        return cp.vstack([
+        return np.vstack([
             self.variables.xpos,
             self.variables.ypos
         ])
@@ -118,7 +236,7 @@ class SCPSolver:
     @property
     def state(self):
         """ Get all the variables that encode the state of the system """
-        return cp.vstack([
+        return np.vstack([
             self.variables.xpos,
             self.variables.ypos,
             self.variables.velocity,
@@ -128,16 +246,126 @@ class SCPSolver:
             self.variables.pinch
         ])
 
-    @property
-    def objective(self):
-        input = cp.vstack([self.variables.jerk, self.variables.juke])
+    def objective(self, x):
+        self.establish_variables(x)
+        input = np.vstack([self.variables.jerk, self.variables.juke])
         assert input.shape == (2, self.num_time_steps)
+<<<<<<< Updated upstream
         input_norm = cp.norm(input, axis=0)
         assert input_norm.shape == (self.num_time_steps,)
         return cp.Minimize(cp.sum(input_norm) + cp.norm(self.position[:,-1] - self.constants.final_position))
+=======
+        input_norm_sq = np.linalg.norm(input, axis=0)**2
+        assert input_norm_sq.shape == (self.num_time_steps,)
+        return np.sum(input_norm_sq) \
+            + np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+>>>>>>> Stashed changes
 
-    @property
-    def constraints(self):
+    def gradient(self, x):
+        self.establish_variables(x)
+        
+        # Establish the indices of x where the various variables are extracted
+        increment = self.num_time_steps + 1
+        xpos_idx = increment*0
+        ypos_idx = increment*1
+        velocity_idx = increment*2
+        theta_idx = increment*3
+        kappa_idx = increment*4
+        accel_idx = increment*5
+        pinch_idx = increment*6
+        increment2 = self.num_time_steps
+        jerk_idx = increment*7
+        juke_idx = increment*7+increment2
+        
+        g = np.zeros_like(x)
+        
+        # Gradient component due to np.sum(input_norm_sq)
+        g[jerk_idx:juke_idx] = 2*self.variables.jerk
+        g[juke_idx:] = 2*self.variables.juke
+        
+        # Gradient component due to final position constraint
+        
+        # The final x position
+        g[ypos_idx-1] = 2 * (self.variables.xpos[-1]-self.constants.final_position[0]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        # The final y position
+        g[velocity_idx-1] = 2 * (self.variables.ypos[-1]-self.constants.final_position[1]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        # The final velocity position
+        g[theta_idx-1] = 2 * (self.variables.velocity[-1]-self.constants.final_position[2]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        # The final theta position
+        g[kappa_idx-1] = 2 * (self.variables.theta[-1]-self.constants.final_position[3]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+
+        return g
+
+    def jacobian(self, x):
+        self.establish_variables(x)
+        
+        # Establish the indices of x where the various variables are extracted
+        increment = self.num_time_steps + 1
+        xpos_idx = increment*0
+        ypos_idx = increment*1
+        velocity_idx = increment*2
+        theta_idx = increment*3
+        kappa_idx = increment*4
+        accel_idx = increment*5
+        pinch_idx = increment*6
+        increment2 = self.num_time_steps
+        jerk_idx = increment*7
+        juke_idx = increment*7+increment2
+        
+        J = np.zeros((x.shape[0], 7*increment+2*increment2))
+        
+        h = self.constants.time_step_magnitude
+        
+        # X-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[xpos_idx+k,xpos_idx+k] = 1
+            J[xpos_idx+k,xpos_idx+k+1] = -1
+            J[xpos_idx+k,velocity_idx+k] = h*np.cos(self.variables.theta[k])
+            J[xpos_idx+k,theta_idx+k] = -h*self.variables.velocity[k]*np.sin(self.variables.theta[k])
+        
+        # Y-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[ypos_idx+k,ypos_idx+k] = 1
+            J[ypos_idx+k,ypos_idx+k+1] = -1
+            J[ypos_idx+k,velocity_idx+k] = h*np.sin(self.variables.theta[k])
+            J[ypos_idx+k,theta_idx+k] = h*self.variables.velocity[k]*np.cos(self.variables.theta[k])
+        
+        # Velocity-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[velocity_idx+k,velocity_idx+k] = 1
+            J[velocity_idx+k,velocity_idx+k+1] = -1
+            J[velocity_idx+k,accel_idx+k] = h
+        
+        # Theta-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[theta_idx+k,theta_idx+k] = 1
+            J[theta_idx+k,theta_idx+k+1] = -1
+            J[theta_idx+k,velocity_idx+k] = h*self.variables.kappa[k]
+            J[theta_idx+k,kappa_idx+k] = h*self.variables.velocity[k]
+        
+        # Kappa-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[kappa_idx+k,kappa_idx+k] = 1
+            J[kappa_idx+k,kappa_idx+k+1] = -1
+            J[kappa_idx+k,pinch_idx+k] = h
+            
+        # Pinch-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[pinch_idx+k,pinch_idx+k] = 1
+            J[pinch_idx+k,pinch_idx+k+1] = -1
+            J[pinch_idx+k,juke_idx+k] = h
+            
+        # Accel-constraint part of Jacobian
+        for k in range(self.num_time_steps):
+            J[accel_idx+k,accel_idx+k] = 1
+            J[accel_idx+k,accel_idx+k+1] = -1
+            J[accel_idx+k,jerk_idx+k] = h
+        
+        return J
+
+    def constraints(self, x):
+        self.establish_variables(x)
+        
         xpos = self.variables.xpos
         ypos = self.variables.ypos
         veloc = self.variables.velocity
@@ -148,6 +376,7 @@ class SCPSolver:
         jerk = self.variables.jerk
         juke = self.variables.juke
 
+<<<<<<< Updated upstream
         # Previous estimates of state trajectories are stored in self.parameters
         prev_xpos = self.parameters.prev_xpos
         prev_ypos = self.parameters.prev_ypos
@@ -223,6 +452,24 @@ class SCPSolver:
         return optval
 
 def rotateByAngle(vec, th):
+=======
+        h = self.constants.time_step_magnitude
+        r = self.constants.max_deviation_from_reference
+
+        constraints = np.concatenate((
+            -nxt(xpos) + curr(xpos) + h * curr(veloc)*np.cos(curr(theta)),
+            -nxt(ypos) + curr(ypos) + h * curr(veloc)*np.sin(curr(theta)),
+            -nxt(veloc) + curr(veloc) + h * curr(accel),
+            -nxt(theta) + curr(theta) + h * (curr(veloc)*curr(kappa)),
+            -nxt(kappa) + curr(kappa) + h * curr(pinch),
+            -nxt(accel) + curr(accel) + h * jerk,
+            -nxt(pinch) + curr(pinch) + h * juke
+        ))
+
+        return constraints
+
+def rotate_by_angle(vec, th):
+>>>>>>> Stashed changes
     M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
     return M@vec
 
@@ -273,6 +520,7 @@ if __name__ == "__main__":
     max_deviation_from_reference = very_high_value
     epsilon = 0.01 #tolerance for convergence of the solution
     action = np.zeros(3)
+<<<<<<< Updated upstream
 
     solver = SCPSolver(100, 2, init_pos, final_pos,
         max_jerk, max_juke, max_velocity, max_kappa, max_deviation_from_reference)
@@ -301,6 +549,135 @@ if __name__ == "__main__":
         mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
         acc = solver.variables.accel[0].value
         action[1] = mass*acc # gas action
+=======
+    max_theta = np.pi
+
+    solver = NLPSolver(
+        num_time_steps = 100,
+        duration = 2,
+        final_position = final_position,
+        max_jerk = max_jerk,
+        max_juke = max_juke,
+        max_velocity = max_velocity,
+        max_kappa = max_kappa,
+        max_accel = max_accel,
+        max_pinch = max_pinch,
+        max_theta = max_theta,
+        max_deviation_from_reference = max_deviation_from_reference
+    )
+    
+    solver.update_state(initial_state)
+
+    n = 7*(solver.num_time_steps+1)+2*(solver.num_time_steps)
+    m = 7*(solver.num_time_steps)
+
+    increment = solver.num_time_steps + 1
+    xpos_idx = increment*0
+    ypos_idx = increment*1
+    velocity_idx = increment*2
+    theta_idx = increment*3
+    kappa_idx = increment*4
+    accel_idx = increment*5
+    pinch_idx = increment*6
+    increment2 = solver.num_time_steps
+    jerk_idx = increment*7
+    juke_idx = increment*7+increment2
+
+
+    lb = -np.inf*np.ones(n)
+    lb[xpos_idx] = solver.current_state["xpos"]
+    lb[ypos_idx] = solver.current_state["ypos"]
+    lb[velocity_idx] = solver.current_state["velocity"]
+    lb[theta_idx] = solver.current_state["theta"]
+    lb[kappa_idx] = solver.current_state["kappa"]
+    lb[accel_idx] = solver.current_state["accel"]
+    lb[pinch_idx] = solver.current_state["pinch"]
+    
+    ub = np.inf*np.ones(n)
+    ub[xpos_idx] = solver.current_state["xpos"]
+    ub[ypos_idx] = solver.current_state["ypos"]
+    ub[velocity_idx] = solver.current_state["velocity"]
+    ub[theta_idx] = solver.current_state["theta"]
+    ub[kappa_idx] = solver.current_state["kappa"]
+    ub[accel_idx] = solver.current_state["accel"]
+    ub[pinch_idx] = solver.current_state["pinch"]
+
+    lb[velocity_idx:theta_idx] = -solver.constants["max_velocity"]
+    lb[theta_idx:kappa_idx] = -solver.constants["max_theta"]
+    lb[kappa_idx:accel_idx] = -solver.constants["max_kappa"]
+    lb[accel_idx:pinch_idx] = -solver.constants["max_accel"]
+    lb[pinch_idx:jerk_idx] = -solver.constants["max_pinch"]
+    lb[jerk_idx:juke_idx] = -solver.constants["max_jerk"]
+    lb[juke_idx:] = -solver.constants["max_juke"]
+
+    ub[velocity_idx:theta_idx] = solver.constants["max_velocity"]
+    ub[theta_idx:kappa_idx] = solver.constants["max_theta"]
+    ub[kappa_idx:accel_idx] = solver.constants["max_kappa"]
+    ub[accel_idx:pinch_idx] = solver.constants["max_accel"]
+    ub[pinch_idx:jerk_idx] = solver.constants["max_pinch"]
+    ub[jerk_idx:juke_idx] = solver.constants["max_jerk"]
+    ub[juke_idx:] = solver.constants["max_juke"]
+
+    cl = np.zeros(m)
+    cu = np.zeros(m)
+
+    nlp = cyipopt.Problem(
+       n=n,
+       m=m,
+       problem_obj=solver,
+       lb=lb,
+       ub=ub,
+       cl=cl,
+       cu=cu,
+    ) 
+
+    NUM_TIME_STEPS = 100
+    actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
+    first = True
+    fig, ax = plt.subplots(2,3)
+
+    derivative = np.zeros(100)
+    prev_velocity = 0
+
+    for _ in range(NUM_TIME_STEPS):
+        env.render()
+
+        x0 = np.concatenate((
+            solver.previous_trajectory.xpos,
+            solver.previous_trajectory.ypos,
+            solver.previous_trajectory.velocity,
+            solver.previous_trajectory.theta,
+            solver.previous_trajectory.kappa,
+            solver.previous_trajectory.accel,
+            solver.previous_trajectory.pinch,
+            np.zeros(solver.num_time_steps),
+            np.zeros(solver.num_time_steps)
+        ))
+        x, info = nlp.solve(x0)
+
+        if first:
+            ax[0,0].scatter(solver.variables.xpos, solver.variables.ypos, c='black', label = 'Planned trajectory')
+            ax[0,0].scatter(solver.current_state.xpos, solver.current_state.ypos, s=30, c='blue')
+            #ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
+            ax[0,0].scatter(solver.constants.final_position[0], solver.constants.final_position[1], s=30, c='red')
+            ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
+            ax[0,2].plot(np.arange(solver.num_time_steps+1), solver.variables.accel.value)
+            ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
+            ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
+            ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
+            print("theta below")
+            print(solver.variables.theta)
+            
+            first = False
+        
+        # Obtain the chosen action given the MPC solve
+        kappa = solver.variables.kappa[0]
+        action[0] = np.arctan(ELL * kappa) / -0.4200316 # steering action, rescale
+        mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
+        alpha = (1/43.77365112) # Magicccccc!
+        acc = solver.variables.accel[0]
+        action[1] = alpha*acc
+>>>>>>> Stashed changes
         action[2] = 0 # brake action - not used for our purposes
 
         # Step through the environment
