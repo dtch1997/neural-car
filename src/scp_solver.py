@@ -170,7 +170,7 @@ class NLPSolver:
         self.variables.pinch = x[increment*6:increment*7]
         increment2 = self.num_time_steps
         self.variables.jerk = x[increment*7:increment*7+increment2]
-        self.variables.juke = x[increment*7+increment2:increment*7+2*increment2]
+        self.variables.juke = x[increment*7+increment2:]
 
     @property
     def input(self):
@@ -236,13 +236,13 @@ class NLPSolver:
         # Gradient component due to final position constraint
         
         # The final x position
-        g[ypos_idx-1] = 2 * (self.variables.xpos[-1]-self.constants.final_position[0]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[ypos_idx-1] = (self.variables.xpos[-1]-self.constants.final_position[0]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final y position
-        g[velocity_idx-1] = 2 * (self.variables.ypos[-1]-self.constants.final_position[1]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[velocity_idx-1] = (self.variables.ypos[-1]-self.constants.final_position[1]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final velocity position
-        g[theta_idx-1] = 2 * (self.variables.velocity[-1]-self.constants.final_position[2]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[theta_idx-1] = (self.variables.velocity[-1]-self.constants.final_position[2]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final theta position
-        g[kappa_idx-1] = 2 * (self.variables.theta[-1]-self.constants.final_position[3]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[kappa_idx-1] = (self.variables.theta[-1]-self.constants.final_position[3]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
 
         return g
 
