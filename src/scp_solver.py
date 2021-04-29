@@ -55,6 +55,7 @@ class NLPSolver:
     def __init__(self,
             num_time_steps: float,
             duration: float,
+            initial_position: np.ndarray,
             final_position: np.ndarray,
             max_jerk: float,
             max_juke: float,
@@ -81,6 +82,7 @@ class NLPSolver:
 
         self.constants = AttrDict.from_dict({
             "time_step_magnitude": time_step_magnitude,
+            "initial_position": initial_position,
             "final_position": final_position,
             "max_jerk": max_jerk,
             "max_juke": max_juke,
@@ -102,6 +104,11 @@ class NLPSolver:
             state_variable_name: np.zeros(1) \
                 for state_variable_name in self.state_variable_names
         })
+        self.current_state.xpos = initial_position[0]    
+        self.current_state.xpos = initial_position[1]
+        self.current_state.velocity = initial_position[2]  
+        self.current_state.theta = initial_position[3]  
+            
         self.variables = AttrDict.from_dict({
             # Note: Idiomatic way to combine two dictionaries
             **{state_variable_name: np.zeros(num_time_steps+1) \
@@ -146,6 +153,9 @@ class NLPSolver:
         ypos = self.current_state.ypos
         veloc = self.current_state.velocity
         theta = self.current_state.theta
+        
+        theta = np.arctan2((self.constants.final_position[1] - self.current_state.ypos),(self.constants.final_position[0] - self.current_state.xpos))
+        
         #h = self.constants.time_step_magnitude.value
         h = self.constants.time_step_magnitude
         # TODO: Ask polo to check this
@@ -230,19 +240,19 @@ class NLPSolver:
         g = np.zeros_like(x)
         
         # Gradient component due to np.sum(input_norm_sq)
-        g[jerk_idx:juke_idx] = 2*self.variables.jerk
-        g[juke_idx:] = 2*self.variables.juke
+        g[jerk_idx:juke_idx] += 2*self.variables.jerk
+        g[juke_idx:] += 2*self.variables.juke
         
         # Gradient component due to final position constraint
         
         # The final x position
-        g[ypos_idx-1] = (self.variables.xpos[-1]-self.constants.final_position[0]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[ypos_idx-1] += (self.variables.xpos[-1]-self.constants.final_position[0]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final y position
-        g[velocity_idx-1] = (self.variables.ypos[-1]-self.constants.final_position[1]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[velocity_idx-1] += (self.variables.ypos[-1]-self.constants.final_position[1]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final velocity position
-        g[theta_idx-1] = (self.variables.velocity[-1]-self.constants.final_position[2]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[theta_idx-1] += (self.variables.velocity[-1]-self.constants.final_position[2]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
         # The final theta position
-        g[kappa_idx-1] = (self.variables.theta[-1]-self.constants.final_position[3]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
+        g[kappa_idx-1] += (self.variables.theta[-1]-self.constants.final_position[3]) / np.linalg.norm(self.position[:,-1] - self.constants.final_position, 2)
 
         return g
 
@@ -403,6 +413,7 @@ if __name__ == "__main__":
     theta = initial_state['theta']
     direction = np.array([np.cos(theta), np.sin(theta),0,0])
     orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
+    initial_position = np.array([x,y,0,theta])
     final_position = np.array([x,y,0,theta]) + 10 * direction + 10 * orth_direction
 
     print("Initial x: ", x)
@@ -427,6 +438,7 @@ if __name__ == "__main__":
     solver = NLPSolver(
         num_time_steps = 100,
         duration = 2,
+        initial_position = initial_position,
         final_position = final_position,
         max_jerk = max_jerk,
         max_juke = max_juke,
@@ -477,7 +489,8 @@ if __name__ == "__main__":
     ub[pinch_idx] = solver.current_state["pinch"]
 
     lb[velocity_idx:theta_idx] = -solver.constants["max_velocity"]
-    lb[theta_idx:kappa_idx] = -solver.constants["max_theta"]
+    #lb[theta_idx:kappa_idx] = -solver.constants["max_theta"]
+    lb[theta_idx:kappa_idx] = -np.inf
     lb[kappa_idx:accel_idx] = -solver.constants["max_kappa"]
     lb[accel_idx:pinch_idx] = -solver.constants["max_accel"]
     lb[pinch_idx:jerk_idx] = -solver.constants["max_pinch"]
@@ -485,7 +498,8 @@ if __name__ == "__main__":
     lb[juke_idx:] = -solver.constants["max_juke"]
 
     ub[velocity_idx:theta_idx] = solver.constants["max_velocity"]
-    ub[theta_idx:kappa_idx] = solver.constants["max_theta"]
+    #ub[theta_idx:kappa_idx] = solver.constants["max_theta"]
+    ub[theta_idx:kappa_idx] = np.inf
     ub[kappa_idx:accel_idx] = solver.constants["max_kappa"]
     ub[accel_idx:pinch_idx] = solver.constants["max_accel"]
     ub[pinch_idx:jerk_idx] = solver.constants["max_pinch"]
@@ -504,8 +518,10 @@ if __name__ == "__main__":
        cl=cl,
        cu=cu,
     ) 
+    nlp.add_option('max_iter', 1000) 
 
-    NUM_TIME_STEPS = 100
+    #NUM_TIME_STEPS = 100
+    NUM_TIME_STEPS = 1
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
@@ -530,15 +546,27 @@ if __name__ == "__main__":
         x, info = nlp.solve(x0)
 
         if first:
-            ax[0,0].scatter(solver.variables.xpos, solver.variables.ypos, c='black', label = 'Planned trajectory')
+            
+            increment = 100 + 1
+            xpos = x[increment*0:increment*1]
+            ypos = x[increment*1:increment*2]
+            velocity = x[increment*2:increment*3]
+            theta = x[increment*3:increment*4]
+            kappa = x[increment*4:increment*5]
+            accel = x[increment*5:increment*6]
+            pinch = x[increment*6:increment*7]
+            increment2 = 100
+            jerk = x[increment*7:increment*7+increment2]
+            juke = x[increment*7+increment2:]
+            ax[0,0].scatter(xpos, ypos, c='black', label = 'Planned trajectory')
             ax[0,0].scatter(solver.current_state.xpos, solver.current_state.ypos, s=30, c='blue')
             #ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
             ax[0,0].scatter(solver.constants.final_position[0], solver.constants.final_position[1], s=30, c='red')
-            ax[0,1].plot(np.arange(solver.num_time_steps+1), solver.variables.velocity.value)
-            ax[0,2].plot(np.arange(solver.num_time_steps+1), solver.variables.accel.value)
-            ax[1,0].plot(np.arange(solver.num_time_steps+1), solver.variables.theta.value)
-            ax[1,1].plot(np.arange(solver.num_time_steps+1), solver.variables.kappa.value)
-            ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * solver.variables.kappa.value))
+            ax[0,1].plot(np.arange(solver.num_time_steps+1), velocity)
+            ax[0,2].plot(np.arange(solver.num_time_steps+1), accel)
+            ax[1,0].plot(np.arange(solver.num_time_steps+1), theta)
+            ax[1,1].plot(np.arange(solver.num_time_steps+1), kappa)
+            ax[1,2].plot(np.arange(solver.num_time_steps+1), np.arctan(ELL * kappa))
             print("theta below")
             print(solver.variables.theta)
             
@@ -559,3 +587,13 @@ if __name__ == "__main__":
         if done:
             observation = env.reset()
     env.close
+    
+    ax[0,0].scatter(actual_trajectory[:,0], actual_trajectory[:,1], c='green', label = "actual trajectory")
+    ax[0,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,2])
+    ax[1,0].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,3])
+    ax[1,1].plot(np.arange(NUM_TIME_STEPS), actual_trajectory[:,4])
+    ax[1,2].plot(np.arange(NUM_TIME_STEPS), np.arctan(ELL * actual_trajectory[:,4]))
+
+
+    plt.show()
+    plt.savefig("scp_trajectory.png")
