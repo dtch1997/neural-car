@@ -484,15 +484,9 @@ def main():
     accel_limit = 1
     pinch_limit = 3/ELL
     
-    # #DECLARATION OF POSITIONS OF PERMANENT OBSTACLES FOR OBSTACLE AVOIDANCE
-    # zObs = np.array([[5,2],[12,6],[12,1],[20,3],[26,6],[26,1]]) #positions of center of obstacles
-    # rObs = np.array([[2.06],[1.78],[1.78],[3.81],[1.66],[1.56]]) #radii of obstacles
-    # obstacles = len(rObs) #total number of obstacles to dodge
-    
     #DECLARATION OF TRAJECTORY VALUES
     xt = np.random.rand(NavigatioN,7) #arbitrary stand-in for previous solution state trajectory
     ut = np.random.rand(NavigatioN,2) #arbitrary stand-in for previous solution control trajectory
-    # zt = np.random.rand(NavigatioN,2) #arbitrary stand-in for trajectory values pertaining specifically to x,y positions (for obstacle avoidance)
     
     for _ in range(NUM_TIME_STEPS):
         env.render()
@@ -534,9 +528,10 @@ def main():
             #SOLVING TRAJECTORY AS CONVEX PROBLEM
             x = cp.Variable((NavigatioN,7)) #state trajectory
             u = cp.Variable((NavigatioN,2)) #control inputs
+            #z = cp.Variable((NavigatioN,2)) #trajectory in x and y (for obstacle avoidance)
             #velVec = cp.Variable((NavigatioN,2)) #vector of instantaneous acceleration (for traction control)
             
-            objectNav = cp.Minimize(h*cp.square(cp.norm(u,'fro')) + cp.norm(xFinal - x[-1,:],1)) #objective function
+            objectNav = cp.Minimize(h*cp.norm(u,'fro')**2 + cp.norm(xFinal - x[-1,:],1)) #objective function
 
             constrNav = [] #initialize constraints list
 
@@ -574,15 +569,22 @@ def main():
                 ]
             
             # #TRACTION CONTROL CONSTRAINTS
-            # constrNav += [velVec[:,0] == x[:,5]] #longitudinal acceleration
-            # constrNav += [velVec[:,1] == cp.multiply(2*prev_veloc*prev_kappa,x[:,3] - prev_veloc) + cp.multiply(prev_veloc**2,x[:,4])] #centripetal acceleration
-            # for i in range(1,NavigatioN): #apply constraint to mutable steps
-            #     constrNav += [cp.norm(velVec[i,:],2) <= accel_limit] #skid prevention at step i
+            # for i in range(1,NavigatioN):
+                # constrNav += [velVec[i,0] == x[i,5]] #longitudinal acceleration
+                # constrNav += [velVec[i,1] == cp.multiply(2*prev_veloc[i]*prev_kappa[i],x[i,3] - prev_veloc[i]) + cp.multiply(prev_veloc[i]**2,x[i,4])] #centripetal acceleration
+                # constrNav += [cp.norm(velVec[i,:]) <= accel_limit] #skid prevention at step i
 
-            # #OBSTACLE AVOIDANCE CONSTRAINTS
-            # for o in range(0,obstacles): #constraints for each obstacle
-            #     for i in range(1,NavigatioN): #apply constraints to mutable steps                
-            #         constrNav += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:])/cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
+            #OBSTACLE AVOIDANCE CONSTRAINTS
+            #	for o in range(0,obstacles): #constraints for each obstacle
+            #	    for i in range(1,NavigatioN): #apply constraints to mutable steps
+            #	        distance = zt[i,:] - zObs[o,:]
+            #	        print(distance)
+            #	        divergence = z[i,:]-zt[i,:]
+            #	        print(divergence)
+            #	        constrNav += [rObs[o] - cp.norm(distance) - (distance/cp.norm(distance))*np.transpose(z[i,:]-zt[i,:]) <= 0]
+            #	        print(zt[i,:] - zObs[o,:])
+            #	        print(np.transpose(zt[i,:] - zObs[o,:]))
+            #	        constrNav += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - np.dot(((zt[i,:] - zObs[o,:])/cp.norm((zt[i,:] - zObs[o,:]))),(z[i,:]-zt[i,:])) <= 0]
             
             problem = cp.Problem(objectNav,constrNav)
             optval = problem.solve(solver=cp.ECOS)
@@ -591,12 +593,11 @@ def main():
             print('opt :',optval) #monitor
             print('problem status: ',problem.status)
             
-            if problem.status == 'infeasible': #if bad information from the environment provokes an infeasible solve, don't crash
+            if problem.status == 'infeasible': #a bug in recovery of the current state from the environment eventually provokes infeasible solves
                 break
             
             # diff = np.max(np.abs(u.value - ut)) #if checking convergence independently of cost function
             xt = deepcopy(x.value) #for use in following iteration
-            # zt = x[:,:2] #ACTIVATE FOR OBSTACLE AVOIDANCE CONSTRAINTS
             ut = deepcopy(u.value) #for use in following iteration
             diff = optval - prevGas #for checking convergence via while loop (convergence of cost value)
             
@@ -628,9 +629,10 @@ def main():
         # alpha = (1/43.77365112) # Magicccccc!
         alpha = (1/500) #Magiaaaaaa!
         acc = xt[1,5] #first acceleration value in saved trajectory
-        # print('requested curvature: ',kappa)
-        # print('requested steering angle: ',np.arctan(ELL * kappa))
+        print('requested curvature: ',kappa)
+        print('requested steering angle: ',np.arctan(ELL * kappa))
         action[1] = alpha*acc
+        print('proportion of total steer maneuver: ',action[0])
         action[2] = 0 # brake action - not used for our purposes
         
         """
@@ -662,8 +664,8 @@ def main():
         #print("Current x: ", state['xpos'])
         #print("Current y: ", state['ypos'])
         #print("Current vel: ", env.car.hull.linearVelocity)
-        #print("Current angle:", env.car.hull.angle + np.pi / 2)
-        #print(np.arctan(ELL*state['kappa']))
+        print("Current angle:", env.car.hull.angle + np.pi / 2)
+        print(np.arctan(ELL*state['kappa']))
         """
         derivative[_] = (state['velocity'] - prev_velocity)/solver.constants.time_step_magnitude.value
         prev_velocity = state['velocity']
