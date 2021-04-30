@@ -627,9 +627,7 @@ def main():
         # mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
         # alpha = (1/43.77365112) # Magicccccc!
         alpha = (1/500) #Magiaaaaaa!
-        acc = xt[1,5] #first acceleration value in saved trajectory
-        # print('requested curvature: ',kappa)
-        # print('requested steering angle: ',np.arctan(ELL * kappa))
+        acc = xt[1,5] #first acceleration value in saved trajector
         action[1] = alpha*acc
         action[2] = 0 # brake action - not used for our purposes
         
