@@ -378,7 +378,7 @@ def get_current_state(env) -> Dict[str, float]:
     #velocity_mpc = np.linalg.norm(vec1,2) if dot_prod > 0 else -np.linalg.norm(vec1,2)
     # We should only count the forward velocity
     velocity_mpc = dot_prod
-    kappa_mpc = np.tan(env.car.wheels[0].angle) / ELL
+    kappa_mpc = np.tan(env.car.wheels[0].joint.angle) / ELL
 
     x_env = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
     y_env = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
@@ -458,7 +458,7 @@ def main():
     # solver.update_state(initial_state)
 
 
-    NUM_TIME_STEPS = 100
+    NUM_TIME_STEPS = 600
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
@@ -475,17 +475,18 @@ def main():
     print("target: ",xFinal)
     
     h = 0.02 #50Hz
+    # h = 0.04 #25Hz (debug)
     epsilon = 0.01
     
     #DECLARATION OF CONTROL LIMITS
     speed_limit = 20
-    kappa_limit = np.tan(0.4200316) / ELL
+    kappa_limit = np.tan(0.4) / ELL
     accel_limit = 1
     pinch_limit = 3/ELL
     
     #DECLARATION OF TRAJECTORY VALUES
-    xt = np.ones((NavigatioN,7)) #arbitrary stand-in for previous solution state trajectory
-    ut = np.ones((NavigatioN,2)) #arbitrary stand-in for previous solution control trajectory
+    xt = np.random.rand(NavigatioN,7) #arbitrary stand-in for previous solution state trajectory
+    ut = np.random.rand(NavigatioN,2) #arbitrary stand-in for previous solution control trajectory
     
     for _ in range(NUM_TIME_STEPS):
         env.render()
@@ -516,12 +517,7 @@ def main():
         
         while abs(diff) > epsilon:
             #CALCULATION OF OBJECTIVE VALUE WITH PRIOR SOLUTION
-            prevGas = 0
-            for i in range(NavigatioN):
-                prevGas += np.linalg.norm(ut[i,:],2)**2 #total cost of input actions
-            prevGas += np.linalg.norm(xFinal - xt[-1,:],1) #estimated cost past last step
-            prevGas *= h #maintaining scaling with time step size
-
+            prevGas = h*np.linalg.norm(ut,'fro')**2 + np.linalg.norm(xFinal - xt[-1,:],1) #objective value with prior trajectory
             print('prev: ',prevGas)
 
         	#zt = xt[:,0:2] #saving only the positional values in the trajectory (for obstacle avoidance)
@@ -533,24 +529,15 @@ def main():
             x = cp.Variable((NavigatioN,7)) #state trajectory
             u = cp.Variable((NavigatioN,2)) #control inputs
             #z = cp.Variable((NavigatioN,2)) #trajectory in x and y (for obstacle avoidance)
-
-            gasolina = cp.expressions.expression.Expression #to hold value of objective function
-            #	distance = cp.expressions.expression.Expression #to hold a given distance between a step and obstacle
-            #	divergence = cp.expressions.expression.Expression #to hold the difference between the variable value and previous calculation for a step
-
-
-            gasolina = 0
-            for i in range(NavigatioN): #intermediate steps
-                gasolina += cp.norm(u[i,:],2)**2 #calculation of squared 2-norms to be added for objective function
-            gasolina += cp.norm(xFinal - x[-1,:],1) #1-norm of distance to final position
-            gasolina *= h
-    
-            objectNav = cp.Minimize(gasolina) #declaration of objective
+            #velVec = cp.Variable((NavigatioN,2)) #vector of instantaneous acceleration (for traction control)
+            
+            objectNav = cp.Minimize(h*cp.norm(u,'fro')**2 + cp.norm(xFinal - x[-1,:],1)) #objective function
 
             constrNav = [] #initialize constraints list
 
             #INITIAL POSITION
             constrNav += [x[0,:] == xInitial] #hard constraint on initial position
+            #constrNav += [x[NavigatioN-1,:] == xFinal]
 
             #DYNAMICS CONSTRAINTS
             constrNav += [
@@ -562,9 +549,8 @@ def main():
                             cp.multiply(curr(x[:,3]), np.sin(curr(prev_theta)))
                             + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta))), curr(x[:,2] - prev_theta))
                         ),
-                    nxt(x[:,2]) == curr(x[:,2]) + h * ( #theta constraint x[:,2]
-                            cp.multiply(curr(prev_veloc), curr(prev_kappa)) 
-                            + cp.multiply(curr(prev_kappa), curr(x[:,3]) - curr(prev_veloc))
+                    nxt(x[:,2]) == curr(x[:,2]) + h * ( #theta constraint x[:,2] 
+                            cp.multiply(curr(x[:,3]), curr(prev_kappa))
                             + cp.multiply(curr(prev_veloc), curr(x[:,4]) - curr(prev_kappa))
                         ),
                     nxt(x[:,3]) == curr(x[:,3]) + h * curr(x[:,5]), #velocity constraint x[:,3]
@@ -575,12 +561,18 @@ def main():
 	
             #CONTROL LIMIT CONSTRAINTS:
             constrNav += [
-                cp.norm(x[:,3], p=np.inf) <= speed_limit, #max forwards velocity (speed limit)
-                x[:,4] <= kappa_limit, #maximum curvature
-                x[:,4] >= -1*kappa_limit,
+                cp.norm(x[1:,3], p=np.inf) <= speed_limit, #max forwards velocity (speed limit)
+                x[1:,4] <= kappa_limit, #maximum curvature
+                x[1:,4] >= -1*kappa_limit,
                 cp.norm(x[:,5], p=np.inf) <= accel_limit, #max acceleration
                 cp.norm(x[:,6], p=np.inf) <= pinch_limit #max pinch
                 ]
+            
+            # #TRACTION CONTROL CONSTRAINTS
+            # for i in range(1,NavigatioN):
+                # constrNav += [velVec[i,0] == x[i,5]] #longitudinal acceleration
+                # constrNav += [velVec[i,1] == cp.multiply(2*prev_veloc[i]*prev_kappa[i],x[i,3] - prev_veloc[i]) + cp.multiply(prev_veloc[i]**2,x[i,4])] #centripetal acceleration
+                # constrNav += [cp.norm(velVec[i,:]) <= accel_limit] #skid prevention at step i
 
             #OBSTACLE AVOIDANCE CONSTRAINTS
             #	for o in range(0,obstacles): #constraints for each obstacle
@@ -604,9 +596,11 @@ def main():
             if problem.status == 'infeasible': #a bug in recovery of the current state from the environment eventually provokes infeasible solves
                 break
             
+            # diff = np.max(np.abs(u.value - ut)) #if checking convergence independently of cost function
             xt = deepcopy(x.value) #for use in following iteration
             ut = deepcopy(u.value) #for use in following iteration
-            diff = prevGas - optval #for checking convergence via while loop (convergence of cost value)
+            diff = optval - prevGas #for checking convergence via while loop (convergence of cost value)
+            
         
         
         if first:
@@ -629,19 +623,24 @@ def main():
         print('final opt val: ',optval)
 
         # Obtain the chosen action given the MPC solve
-        kappa = xt[0,4] #copy initial action from last saved trajectory
-        action[0] = np.arctan(ELL * kappa) / -0.4200316 # steering action, rescale
-        mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
-        alpha = (1/43.77365112) # Magicccccc!
-        acc = xt[0,5] #first acceleration value in saved trajectory
+        kappa = xt[1,4] #copy initial action from last saved trajectory
+        action[0] = -1*np.arctan(ELL * kappa) #steering action, rescale
+        # mass = 1000000*SIZE*SIZE # friction ~= mass (as stated in dynamics)
+        # alpha = (1/43.77365112) # Magicccccc!
+        alpha = (1/500) #Magiaaaaaa!
+        acc = xt[1,5] #first acceleration value in saved trajectory
+        print('requested curvature: ',kappa)
+        print('requested steering angle: ',np.arctan(ELL * kappa))
         action[1] = alpha*acc
+        print('proportion of total steer maneuver: ',action[0])
         action[2] = 0 # brake action - not used for our purposes
         
         """
         action[0] = 0
-        action[1] = 1
+        action[1] = 0.1
         action[2] = 0
         """
+        
         # Step through the environment
         observation, reward, done, info = env.step(action)
         if done:
@@ -661,12 +660,12 @@ def main():
             state['accel'],
             state['pinch']
         ])
-
+        
         #print("Current x: ", state['xpos'])
         #print("Current y: ", state['ypos'])
         #print("Current vel: ", env.car.hull.linearVelocity)
-        #print("Current angle:", env.car.hull.angle + np.pi / 2)
-        #print(np.arctan(162*state['kappa']))
+        print("Current angle:", env.car.hull.angle + np.pi / 2)
+        print(np.arctan(ELL*state['kappa']))
         """
         derivative[_] = (state['velocity'] - prev_velocity)/solver.constants.time_step_magnitude.value
         prev_velocity = state['velocity']
