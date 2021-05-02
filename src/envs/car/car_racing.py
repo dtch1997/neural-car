@@ -19,8 +19,7 @@ from PIL import Image
 
 import gym
 from gym import spaces
-#from gym.envs.box2d.car_dynamics import Car
-from neural_car_dynamics import Car
+from .dynamics import Car
 from gym.utils import colorize, seeding, EzPickle
 
 import pyglet
