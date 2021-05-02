@@ -32,7 +32,7 @@ class SCPAgent:
     pinch_limit = 3 / Env.constants.ell
 
     # Solver parameters
-    convergence_tol: float = 1e-7
+    convergence_tol: float = 1e-2
     solver = cp.ECOS
 
     # Obstacle parameters

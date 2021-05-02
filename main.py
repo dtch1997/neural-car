@@ -28,7 +28,7 @@ def plot_trajectory(initial_state, goal_state, state_trajectory):
 
     #ax[1,2].plot(time, np.arctan(ELL * xt[:,4])) #steering angle history
     #ax[1,2].set_title("Steering angle history")
-    plt.show()
+    plt.savefig('scp_trajectory.png')
 
 def main():
     env = Environment()
@@ -45,12 +45,11 @@ def main():
     goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
 
 
-    solver = SCPAgent()
+    solver = SCPAgent(num_time_steps_ahead = 1200)
     # Set up a feasible initial trajectory
     zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
     state_trajectory, input_trajectory = solver.solve(initial_state, goal_state, zero_action_state_trajectory)
-    print(state_trajectory)
     plot_trajectory(initial_state, goal_state, state_trajectory)
 
 if __name__ == "__main__":
