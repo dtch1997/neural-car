@@ -1,1 +1,1 @@
-from .env import Environment as CarRacingEnvironment
+from .car.env import Environment as CarRacingEnvironment

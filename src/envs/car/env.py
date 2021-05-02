@@ -2,25 +2,14 @@ import numpy as np
 
 from .car_racing import CarRacing, FPS
 from .dynamics import SIZE
-from src.utils import AttrDict
+from src.utils import AttrDict, rotate_by_angle
 from typing import *
-
-
-
-def rotate_by_angle(vec, th):
-    """ Rotate a 2D vector by angle
-
-    :param vec: np.array of shape (2,)
-    :param th: angle in radians
-    """
-    M = np.array([[np.cos(th), -np.sin(th)],[np.sin(th), np.cos(th)]])
-    return M @ vec
 
 class Environment(CarRacing):
     """ A wrapper around the CarRacing environment 
     
     Provides APIs for: 
-    1. Extracting state variables
+    1. Extracting state variables from openAI gym
     2. Converting inputs back to openAI gym controls
     """ 
     constants = AttrDict.from_dict({
@@ -29,16 +18,33 @@ class Environment(CarRacing):
         "fps": FPS # Number of frames per second in the simulation
     })
 
-    state_variable_names = ("xpos", "ypos", "velocity", "theta")
-    input_variable_names = ("kappa", "accel")
+    state_variable_names = ("xpos", "ypos", "theta", "velocity", "kappa", "accel", "pinch")
+    action_variable_names = ("jerk", "juke")
+
+    @property 
+    def time_step_duration(self):
+        return 1 / self.constants.fps
 
     @staticmethod
     def num_states():
         return len(Environment.state_variable_names)
     
     @staticmethod 
-    def num_inputs():
-        return len(Environment.input_variable_names)
+    def num_actions():
+        return len(Environment.action_variable_names)
+
+    @property
+    def state_history(self):
+        return self.state_history[:self._num_records]
+
+    @property 
+    def current_state(self):
+        return self._current_state.copy()
+
+    def reset(self):
+        super(Environment, self).reset()
+        # When resetting, the acceleration and pinch are always zero
+        self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
 
     def reset_history(self):
         num_state_vars = len(self.state_variable_names)
@@ -47,49 +53,70 @@ class Environment(CarRacing):
         self._state_history = np.zeros([32, num_state_vars])
         self._num_records = 0
 
-    @property
-    def state_history(self):
-        return self.state_history[:self._num_records]
-
     def record_state(self):
         """ Automatically record the current state """
-        state = self.get_state()
+        state = self.current_state
         for var_idx, var_name in enumerate(self.state_variable_names):
             self.state_history[self.num_logs, var_idx] = state[var_name]
         self._num_records += 1 
         # Expand the state history if we've run out of space 
         if self._num_records >= self._state_history.shape[0]:
             self._state_history = np.concatenate([self._state_history, np.zeros_like(self._state_history)], axis=-1)
-    
-    def get_state(self) -> AttrDict[str, float]:
-        """ Get the current state from underlying environment """
-        theta_mpc = env.car.hull.angle + np.pi / 2
-        vec1 = np.array(env.car.hull.linearVelocity) # Velocity as a vector
+
+    def get_next_state(self, state, action):
+        h = self.time_step_duration 
+        next_state = np.zeros_like(state)
+        next_state[0] = state[0] + h * state[3] * np.cos(state[2])  # xpos 
+        next_state[1] = state[1] + h * state[3] * np.sin(state[2])  # ypos
+        next_state[2] = state[2] + h * state[3] * state[4]          # theta
+        next_state[3] = state[3] + h * state[5]                     # velocity
+        next_state[4] = state[4] + h * state[6]                     # kappa
+        next_state[5] = state[5] + h * action[0]                    # accel
+        next_state[6] = state[6] + h * action[1]                    # pinch
+        return next_state
+
+    def rollout_actions(self, state, actions):
+        assert len(actions.shape) == 2 and actions.shape[1] == self.num_actions()
+        assert len(state.shape) == 1 and state.shape[0] == self.num_states()
+        num_time_steps = actions.shape[0]
+        state_trajectory = np.zeros((num_time_steps+1, state.shape[0]))
+        state_trajectory[0] = state
+        for k in range(num_time_steps):
+            state_trajectory[k+1] = self.get_next_state(state_trajectory[k], actions[k])
+        return state_trajectory
+
+    def _get_env_vars(self):
+        """ Get a subset of state variables from the environment """
+        theta_mpc = self.car.hull.angle + np.pi / 2
+        vec1 = np.array(self.car.hull.linearVelocity) # Velocity as a vector
         vec2 = rotate_by_angle(np.array([1,0]), theta_mpc)
         velocity_mpc = np.dot(vec1, vec2)
-        kappa_mpc = np.tan(env.car.wheels[0].joint.angle) / self.constants.ell
+        kappa_mpc = np.tan(self.car.wheels[0].joint.angle) / self.constants.ell
 
-        x_env = (1/2)*(env.car.wheels[2].position[0]+env.car.wheels[3].position[0])
-        y_env = (1/2)*(env.car.wheels[2].position[1]+env.car.wheels[3].position[1])
+        x_env = (1/2)*(self.car.wheels[2].position[0]+self.car.wheels[3].position[0])
+        y_env = (1/2)*(self.car.wheels[2].position[1]+self.car.wheels[3].position[1])
         x_mpc = x_env
         y_mpc = y_env
 
-        return AttrDict.from_dict({
-            "xpos": x_mpc,
-            "ypos": y_mpc,
-            "velocity": velocity_mpc,
-            "theta": theta_mpc
-        })
+        return np.array([
+            x_mpc, 
+            y_mpc, 
+            theta_mpc, 
+            velocity_mpc, 
+            kappa_mpc
+        ])
 
-    def step(self, action: AttrDict):
-        """ Receive MPC action and feed it to the underlying environment """
-        assert set(action.keys()) == set(self.input_variable_names)
-        kappa, accel = action.kappa, action.accel 
-        action = None 
+    def take_action(self, action):
+        """ Receive MPC action and feed it to the underlying environment 
+        
+        Expects np.ndarray of (jerk, juke)
+        """
+        next_state = self.get_next_state(self.current_state, action)
+        kappa, accel = next_state[4], next_state[5] 
 
         steering_action = -1*np.arctan(self.constants.ell * kappa)
         gas_action = (1/500) * accel  # Polo's magic constant
         brake_action = 0
         env_action = np.array([steering_action, gas_action, brake_action])
         self.record_state()
-        return super(CarRacing, self).step(env_action)
+        return self.step(env_action)

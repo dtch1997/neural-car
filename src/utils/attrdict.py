@@ -1,4 +1,4 @@
-class AttrDict(Dict):
+class AttrDict(dict):
     """ Dictionary that also lets you get the entries as properties """
     def __setitem__(self, key, value):
         super().__setitem__(key, value)
