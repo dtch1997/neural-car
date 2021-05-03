@@ -117,7 +117,11 @@ class NLPSolver:
                 for input_variable_name in self.input_variable_names}
         })
 
-    def update_state(self, values: Dict[str, float], trajectory_init = "zero"):
+    def shift_prev_trajectory(self):
+        for state_variable_name in self.state_variable_names:
+            self.prev_trajectory[state_variable_name] = np.concatenate([self.prev_trajectory[state_variable_name][1:], self.prev_trajectory[state_variable_name][-1][np.newaxis, :]], axis=0) 
+
+    def update_state(self, values: Dict[str, float], rollout_states = None, rollout_actions = None, trajectory_init = "zero"):
         """ Update the current state of the car in the solver
 
         Also initializes a feasible trajectory from that state
@@ -141,6 +145,8 @@ class NLPSolver:
 
         if trajectory_init == "zero":
             self._init_trajectory_zero()
+        elif trajectory_init == "rollout":
+            self._init_trajectory_rollout(rollout_states, rollout_actions)
         else:
             raise ValueError(f"Trajectory initializatoin {trajectory_init} not recognized")
 
@@ -166,6 +172,31 @@ class NLPSolver:
         self.previous_trajectory.velocity = veloc * np.ones(self.num_time_steps+1)
         self.previous_trajectory.theta = theta * np.ones(self.num_time_steps+1)
         self.previous_trajectory.kappa = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.accel = np.zeros(self.num_time_steps+1)
+        self.previous_trajectory.pinch = np.zeros(self.num_time_steps+1)
+
+    def _init_trajectory_rollout(self, rollout_states, rollout_actions):
+        """ Initialize the previous trajectory to the trajectory defined by zero input for all time
+
+        I.e. car moves with fixed constant velocity
+        """
+        xpos = self.current_state.xpos
+        ypos = self.current_state.ypos
+        veloc = self.current_state.velocity
+        theta = self.current_state.theta
+        
+        theta = np.arctan2((self.constants.final_position[1] - self.current_state.ypos),(self.constants.final_position[0] - self.current_state.xpos))
+        
+        #h = self.constants.time_step_magnitude.value
+        h = self.constants.time_step_magnitude
+        # TODO: Ask polo to check this
+        vx, vy = veloc * np.cos(theta), veloc * np.sin(theta)
+        
+        self.previous_trajectory.xpos = rollout_states[:,0]
+        self.previous_trajectory.ypos = rollout_states[:,1]
+        self.previous_trajectory.velocity = rollout_states[:,3]
+        self.previous_trajectory.theta = rollout_states[:,2]
+        self.previous_trajectory.kappa = rollout_states[:,4]
         self.previous_trajectory.accel = np.zeros(self.num_time_steps+1)
         self.previous_trajectory.pinch = np.zeros(self.num_time_steps+1)
 
@@ -450,7 +481,37 @@ if __name__ == "__main__":
         max_deviation_from_reference = max_deviation_from_reference
     )
     
-    solver.update_state(initial_state)
+    def get_next_state(state, action):
+        h = 100/2
+        next_state = np.zeros_like(state)
+        next_state[0] = state[0] + h * state[3] * np.cos(state[2])  # xpos 
+        next_state[1] = state[1] + h * state[3] * np.sin(state[2])  # ypos
+        next_state[2] = state[2] + h * state[3] * state[4]          # theta
+        next_state[3] = state[3] + h * state[5]                     # velocity
+        next_state[4] = state[4] + h * state[6]                     # kappa
+        next_state[5] = state[5] + h * action[0]                    # accel
+        next_state[6] = state[6] + h * action[1]                    # pinch
+        return next_state
+
+    def rollout_actions(state, actions):
+        #assert len(actions.shape) == 2 and actions.shape[1] == 3
+        #assert len(state.shape) == 1 and state.shape[0] == 7
+        num_time_steps = actions.shape[0]
+        state_trajectory = np.zeros((num_time_steps+1, state.shape[0]))
+        state_trajectory[0] = state
+        for k in range(num_time_steps):
+            state_trajectory[k+1] = get_next_state(state_trajectory[k], actions[k])
+        return state_trajectory
+    
+    num_actions = 3
+    zero_action = np.zeros((solver.num_time_steps, num_actions)) 
+    zero_action_state_trajectory = rollout_actions(np.concatenate([initial_position,np.array([0,0,0])]), zero_action)
+    #current_state = initial_state
+    prev_state_trajectory = zero_action_state_trajectory
+    prev_input_trajectory = zero_action   
+        
+    
+    solver.update_state(initial_state, trajectory_init = "rollout", rollout_states = zero_action_state_trajectory, rollout_actions = zero_action)
 
     n = 7*(solver.num_time_steps+1)+2*(solver.num_time_steps)
     m = 7*(solver.num_time_steps)
@@ -583,6 +644,8 @@ if __name__ == "__main__":
 
         # Step through the environment
         observation, reward, done, info = env.step(action)
+
+        solver.shift_prev_trajectory() # Shift to have proper initialization after one solve.
 
         if done:
             observation = env.reset()
