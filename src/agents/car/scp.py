@@ -40,6 +40,9 @@ class SCPAgent:
     obstacle_radii = None 
     obstacle_centers = None
 
+    # Debug parameters 
+    verbose: bool = False
+
     @property
     def num_states(self):
         return len(self.state_variable_names)
@@ -76,13 +79,14 @@ class SCPAgent:
         for iteration in range(self.max_iters):
             # self._convex_solve is guaranteed to return a copy of state trajectory
             state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory)
-            print(f"SCP iteration {iteration}: status {status}, optval {optval}")
+            if self.verbose: 
+                print(f"SCP iteration {iteration}: status {status}, optval {optval}")
             # diff = np.abs(prev_optval - optval)
             diff = np.abs(prev_optval - optval).max()
             if diff < self.convergence_tol:
                 break
-            prev_input_trajectory = input_trajectory.copy()
-            prev_state_trajectory = state_trajectory.copy()
+            prev_input_trajectory = input_trajectory
+            prev_state_trajectory = state_trajectory
             prev_optval = optval
         return state_trajectory, input_trajectory 
 

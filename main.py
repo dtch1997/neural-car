@@ -60,7 +60,8 @@ def main():
     solver = SCPAgent(
         num_time_steps_ahead = 600,    
         convergence_tol = 1e-2,
-        max_iters = 5
+        max_iters = 3, 
+        verbose = False
     )
     # Set up a feasible initial trajectory
     zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
