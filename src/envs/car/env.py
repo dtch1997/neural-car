@@ -57,7 +57,7 @@ class Environment(CarRacing):
         """ Automatically record the current state """
         state = self.current_state
         for var_idx, var_name in enumerate(self.state_variable_names):
-            self.state_history[self.num_logs, var_idx] = state[var_name]
+            self.state_history[self._num_records, var_idx] = state[var_name]
         self._num_records += 1 
         # Expand the state history if we've run out of space 
         if self._num_records >= self._state_history.shape[0]:
@@ -118,5 +118,9 @@ class Environment(CarRacing):
         gas_action = (1/500) * accel  # Polo's magic constant
         brake_action = 0
         env_action = np.array([steering_action, gas_action, brake_action])
-        self.record_state()
-        return self.step(env_action)
+        print(env_action)
+        # self.record_state()
+        self.step(env_action)
+        self._current_state = next_state
+
+        return self.current_state

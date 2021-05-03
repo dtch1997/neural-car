@@ -33,6 +33,7 @@ class SCPAgent:
 
     # Solver parameters
     convergence_tol: float = 1e-2
+    max_iters: int = 100
     solver = cp.ECOS
 
     # Obstacle parameters
@@ -65,18 +66,24 @@ class SCPAgent:
             return 0
         return self.obstacles_centers.shape[0]
 
-    def solve(self, initial_state, goal_state, initial_trajectory):
+    def solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
         """ Perform one SCP solve to find an optimal trajectory """
         diff = self.convergence_tol + 1
-        prev_state_trajectory = initial_trajectory
-        iteration = 0
-        while diff > self.convergence_tol:
+        prev_state_trajectory = initial_state_trajectory
+        prev_input_trajectory = initial_input_trajectory
+        prev_optval = self.time_step_duration * np.linalg.norm(prev_input_trajectory,'fro')**2 + np.linalg.norm(goal_state- prev_state_trajectory[-1] ,1)
+
+        for iteration in range(self.max_iters):
             # self._convex_solve is guaranteed to return a copy of state trajectory
             state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory)
             print(f"SCP iteration {iteration}: status {status}, optval {optval}")
-            diff = np.abs(prev_state_trajectory - state_trajectory).max()
+            # diff = np.abs(prev_optval - optval)
+            diff = np.abs(prev_optval - optval).max()
+            if diff < self.convergence_tol:
+                break
+            prev_input_trajectory = input_trajectory.copy()
             prev_state_trajectory = state_trajectory.copy()
-            iteration += 1
+            prev_optval = optval
         return state_trajectory, input_trajectory 
 
     def _convex_solve(self, initial_state, goal_state, prev_state_trajectory):

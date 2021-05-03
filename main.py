@@ -6,7 +6,7 @@ from src.envs.car import Environment
 from src.agents.car import SCPAgent
 
 
-def plot_trajectory(initial_state, goal_state, state_trajectory):
+def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
     fig, ax = plt.subplots(2,3)
     ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], c='black', label = 'Planned trajectory') #vehicle trajectory
     ax[0,0].scatter(goal_state[0], goal_state[1], s=30, c='red', label = 'Goal position')
@@ -28,11 +28,23 @@ def plot_trajectory(initial_state, goal_state, state_trajectory):
 
     #ax[1,2].plot(time, np.arctan(ELL * xt[:,4])) #steering angle history
     #ax[1,2].set_title("Steering angle history")
-    plt.savefig('scp_trajectory.png')
+    plt.savefig(filepath)
 
 def main():
-    env = Environment()
+    env = Environment(    
+        allow_reverse=True,
+        grayscale=1,
+        show_info_panel=1,
+        discretize_actions=None,
+        num_obstacles=100,
+        num_tracks=1,
+        num_lanes=1,
+        num_lanes_changes=4,
+        max_time_out=0,
+        frames_per_state=4
+    )
     env.reset() 
+    env.reset_history()
 
     # Set up the initial state
     initial_state = env.current_state
@@ -45,12 +57,36 @@ def main():
     goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
 
 
-    solver = SCPAgent(num_time_steps_ahead = 1200)
+    solver = SCPAgent(
+        num_time_steps_ahead = 600,    
+        convergence_tol = 1e-2,
+        max_iters = 5
+    )
     # Set up a feasible initial trajectory
     zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
-    state_trajectory, input_trajectory = solver.solve(initial_state, goal_state, zero_action_state_trajectory)
-    plot_trajectory(initial_state, goal_state, state_trajectory)
+    current_state = initial_state
+    prev_state_trajectory = zero_action_state_trajectory
+    prev_input_trajectory = zero_action    
+
+    num_simulation_time_steps = 300
+    actual_trajectory = np.zeros((num_simulation_time_steps, 7))
+    
+    for i in range(num_simulation_time_steps):
+
+        env.render()
+
+        state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
+        if i == 0:
+            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = 'scp_trajectory.png')
+        prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
+        prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
+        next_state = env.take_action(input_trajectory[0])
+        actual_trajectory[i] = next_state
+        current_state = next_state.copy()
+
+    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = 'actual_trajectory.png')
+
 
 if __name__ == "__main__":
     main()
