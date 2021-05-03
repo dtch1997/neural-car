@@ -74,9 +74,7 @@ def main():
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
     
     for i in range(num_simulation_time_steps):
-
         env.render()
-
         state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
         if i == 0:
             plot_trajectory(initial_state, goal_state, state_trajectory, filepath = 'scp_trajectory.png')
