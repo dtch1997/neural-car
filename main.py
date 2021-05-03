@@ -1,10 +1,12 @@
 import numpy as np
 
+from pathlib import Path
 from matplotlib import pyplot as plt
 from src.utils import rotate_by_angle
 from src.envs.car import Environment 
 from src.agents.car import SCPAgent
 
+OUTPUT_DIR = Path('output')
 
 def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
     fig, ax = plt.subplots(2,3)
@@ -31,6 +33,10 @@ def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
     plt.savefig(filepath)
 
 def main():
+    # Create output directory if it doesn't exist yet
+    if not OUTPUT_DIR.exists():
+        OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
+
     env = Environment(    
         allow_reverse=True,
         grayscale=1,
@@ -77,15 +83,14 @@ def main():
         env.render()
         state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
         if i == 0:
-            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = 'scp_trajectory.png')
+            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/'scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
         prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
         next_state = env.take_action(input_trajectory[0])
         actual_trajectory[i] = next_state
         current_state = next_state.copy()
 
-    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = 'actual_trajectory.png')
-
+    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = str(OUTPUT_DIR / 'actual_trajectory.png'))
 
 if __name__ == "__main__":
     main()
