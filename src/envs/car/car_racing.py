@@ -19,8 +19,7 @@ from PIL import Image
 
 import gym
 from gym import spaces
-#from gym.envs.box2d.car_dynamics import Car
-from neural_car_dynamics import Car
+from .dynamics import Car
 from gym.utils import colorize, seeding, EzPickle
 
 import pyglet
@@ -2184,6 +2183,7 @@ class CarRacing(gym.Env, EzPickle):
         idx = self.np_random.randint(0, len(self.track))
         _,beta,x,y = self._get_rnd_position_inside_lane(
                 idx,border=border,direction=direction)
+        beta = 0 # hard-coded
         return [beta, x, y]
 
     def _get_rnd_position_inside_lane(self,idx,border=True,direction=1,discrete=False):
