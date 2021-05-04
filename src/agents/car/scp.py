@@ -1,6 +1,7 @@
 import cvxpy as cp
 import numpy as np
 
+from src.utils import AttrDict
 from src.envs.car import Environment as Env
 from copy import deepcopy
 from typing import *
@@ -24,6 +25,7 @@ class SCPAgent:
     # The control problem is reparametrized with different control variables
     state_variable_names: Tuple[str] = Env.state_variable_names
     action_variable_names: Tuple[str] = Env.action_variable_names
+    convergence_metrics: Tuple[str] = ("optimal_value", "state_trajectory")
 
     # Control parameters
     speed_limit = 20
@@ -33,6 +35,7 @@ class SCPAgent:
 
     # Solver parameters
     convergence_tol: float = 1e-2
+    convergence_metric: str = 'optimal_value' 
     max_iters: int = 100
     solver = cp.ECOS
 
@@ -51,8 +54,7 @@ class SCPAgent:
         return len(self.action_variable_names)
 
     def __post_init__(self):
-        for var_idx, var_name in enumerate(self.state_variable_names):
-            setattr(self, var_name+"idx", var_idx)
+        self._setup_cp_problem()
 
     def init_obstacles(self, obstacle_centers, obstacle_radii):
         """ Initializes obstacles that the solver avoids 
@@ -62,37 +64,25 @@ class SCPAgent:
         """
         self.obstacle_centers = obstacle_centers
         self.obstacle_radii = obstacle_radii
+        self._setup_cp_problem()
 
-    @property 
-    def num_obstacles(self):
-        if self.obstacle_centers is None:
-            return 0
-        return self.obstacles_centers.shape[0]
+    def _setup_cp_problem(self):
+        """ Set up the CVXPY problem once following DPP principles. 
 
-    def solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
-        """ Perform one SCP solve to find an optimal trajectory """
-        diff = self.convergence_tol + 1
-        prev_state_trajectory = initial_state_trajectory
-        prev_input_trajectory = initial_input_trajectory
-        prev_optval = self.time_step_duration * np.linalg.norm(prev_input_trajectory,'fro')**2 + np.linalg.norm(goal_state- prev_state_trajectory[-1] ,1)
-
-        for iteration in range(self.max_iters):
-            # self._convex_solve is guaranteed to return a copy of state trajectory
-            state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory)
-            if self.verbose: 
-                print(f"SCP iteration {iteration}: status {status}, optval {optval}")
-            # diff = np.abs(prev_optval - optval)
-            diff = np.abs(prev_optval - optval).max()
-            if diff < self.convergence_tol:
-                break
-            prev_input_trajectory = input_trajectory
-            prev_state_trajectory = state_trajectory
-            prev_optval = optval
-        return state_trajectory, input_trajectory 
-
-    def _convex_solve(self, initial_state, goal_state, prev_state_trajectory):
+        This must be called after setting or modifying any solver constants. 
+        
+        Solving just requires us to change parameter values. 
+        In theory this allows CVXPY to solve the same problem multiple times at a greatly increased speed. 
+        Reference: https://www.cvxpy.org/tutorial/advanced/index.html#disciplined-parametrized-programming
+        """
         new_state_trajectory = cp.Variable((self.num_time_steps_ahead + 1, self.num_states))
         new_input_trajectory = cp.Variable((self.num_time_steps_ahead, self.num_actions))
+
+        initial_state = cp.Parameter(shape = (self.num_states,))
+        goal_state = cp.Parameter(shape = (self.num_states,))
+        prev_state_trajectory = cp.Parameter((self.num_time_steps_ahead + 1, self.num_states))
+        cos_prev_theta = cp.Parameter(self.num_time_steps_ahead + 1)
+        sin_prev_theta = cp.Parameter(self.num_time_steps_ahead + 1)
 
         h = self.time_step_duration
         x = new_state_trajectory
@@ -100,9 +90,10 @@ class SCPAgent:
         u = new_input_trajectory
 
         objective = cp.Minimize(
-            self.time_step_duration * cp.square(cp.norm(u,'fro')) \
+            self.time_step_duration * cp.sum_squares(u) \
             + cp.norm(x[-1,:] - goal_state, p=1)
         )
+        assert objective.is_dpp()
 
         constraints = []
         prev_theta = xt[:,2] # previous trajectory of angles
@@ -117,12 +108,12 @@ class SCPAgent:
         # Dynamics constraints 
         constraints += [
             nxt(x[:,0]) == curr(x[:,0]) + h * ( #xpos constraint x[:,0]
-                    cp.multiply(curr(x[:,3]), np.cos(curr(prev_theta)))
-                    - cp.multiply(cp.multiply(curr(prev_veloc), np.sin(curr(prev_theta))), curr(x[:,2] - prev_theta))
+                    cp.multiply(curr(x[:,3]), curr(cos_prev_theta))
+                    - cp.multiply(cp.multiply(curr(prev_veloc), curr(sin_prev_theta)), curr(x[:,2] - prev_theta))
                 ),
             nxt(x[:,1]) == curr(x[:,1]) + h * ( #ypos constraint x[:,1]
-                    cp.multiply(curr(x[:,3]), np.sin(curr(prev_theta)))
-                    + cp.multiply(cp.multiply(curr(prev_veloc), np.cos(curr(prev_theta))), curr(x[:,2] - prev_theta))
+                    cp.multiply(curr(x[:,3]), curr(sin_prev_theta))
+                    + cp.multiply(cp.multiply(curr(prev_veloc), curr(cos_prev_theta)), curr(x[:,2] - prev_theta))
                 ),
             nxt(x[:,2]) == curr(x[:,2]) + h * ( #theta constraint x[:,2]
                     cp.multiply(curr(x[:,3]), curr(prev_kappa))
@@ -142,16 +133,66 @@ class SCPAgent:
             cp.norm(x[:,6], p=np.inf) <= self.pinch_limit #max pinch
         ]
 
-        # Obstacle avoidance constraints
-        """
-        rObs = self.obstacle_radii 
-        zObs = self.obstacle_centers
-        zt = xt[:,:2]
-        for o in range(0, self.num_obstacles): #constraints for each obstacle
-            for i in range(1, self.num_time_steps_ahead): #apply constraints to mutable steps
-                constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
-        """
+        # TODO: Obstacle constraints
+        constraints += [
+
+
+        ]
 
         problem = cp.Problem(objective, constraints)
-        optval = problem.solve(solver = self.solver)
-        return new_state_trajectory.value.copy(), new_input_trajectory.value.copy(), optval, problem.status
+        self.parameters = AttrDict.from_dict({
+            'initial_state': initial_state,
+            'goal_state': goal_state,
+            'prev_state_trajectory': prev_state_trajectory, 
+            'cos_prev_theta_trajectory': cos_prev_theta,
+            'sin_prev_theta_trajectory': sin_prev_theta
+        })
+        self.variables = AttrDict.from_dict({
+            'state_trajectory': new_state_trajectory,
+            'input_trajectory': new_input_trajectory
+        })
+        self.problem = problem
+
+    @property 
+    def num_obstacles(self):
+        if self.obstacle_centers is None:
+            return 0
+        return self.obstacles_centers.shape[0]
+
+    def solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
+        """ Perform one SCP solve to find an optimal trajectory """
+        diff = self.convergence_tol + 1
+        prev_state_trajectory = initial_state_trajectory
+        prev_input_trajectory = initial_input_trajectory
+        prev_optval = self.time_step_duration * np.linalg.norm(prev_input_trajectory,'fro')**2 + np.linalg.norm(goal_state- prev_state_trajectory[-1] ,1)
+
+        for iteration in range(self.max_iters):
+            # self._convex_solve is guaranteed to return a copy of state trajectory
+            state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory, prev_input_trajectory)
+            if self.verbose: 
+                print(f"SCP iteration {iteration}: status {status}, optval {optval}")
+            # diff = np.abs(prev_optval - optval)
+            diff = np.abs(prev_optval - optval).max()
+            if diff < self.convergence_tol:
+                break
+            prev_state_trajectory = state_trajectory
+            prev_input_trajectory = input_trajectory
+            prev_optval = optval
+        return state_trajectory, input_trajectory 
+
+    def _convex_solve(self, initial_state, goal_state, prev_state_trajectory, prev_input_trajectory):
+        self.parameters.initial_state.value = initial_state 
+        self.parameters.goal_state.value = goal_state 
+        self.parameters.prev_state_trajectory.value = prev_state_trajectory
+        self.parameters.cos_prev_theta_trajectory.value = np.cos(prev_state_trajectory[:,2])
+        self.parameters.sin_prev_theta_trajectory.value = np.sin(prev_state_trajectory[:,2])
+
+        optval = self.problem.solve(solver = self.solver)
+        state_trajectory = self.variables.state_trajectory.value
+        input_trajectory = self.variables.input_trajectory.value
+
+        # Set to None to avoid accidentally reusing stale values in next solve 
+        for pname, parameter in self.parameters.items():
+            self.parameters[pname].value = None
+
+        return state_trajectory, input_trajectory, optval, self.problem.status

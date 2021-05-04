@@ -64,8 +64,9 @@ def main():
     solver = SCPAgent(
         num_time_steps_ahead = 600,    
         convergence_tol = 1e-2,
+        convergence_metric = "optimal_value",
         max_iters = 3, 
-        verbose = False
+        verbose = True
     )
 
     # Set up a feasible initial trajectory
@@ -73,24 +74,26 @@ def main():
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
     
     # Begin the simulation
-    num_simulation_time_steps = 300
+    solve_frequency = 3
+    num_simulation_time_steps = 600
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
     prev_state_trajectory = zero_action_state_trajectory
     prev_input_trajectory = zero_action  
     current_state = initial_state  
     for i in range(num_simulation_time_steps):
         env.render()
-        state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
+        if i % solve_frequency == 0:
+            state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
         # Plot the first iteration of planned trajectories
         if i == 0:
-            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/'scp_trajectory.png'))
+            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/ 'optimized_scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
         prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
         next_state = env.take_action(input_trajectory[0])
         actual_trajectory[i] = next_state
         current_state = next_state.copy()
 
-    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = str(OUTPUT_DIR / 'actual_trajectory.png'))
+    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = str(OUTPUT_DIR / 'optimized_actual_trajectory.png'))
 
 if __name__ == "__main__":
     main()
