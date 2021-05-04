@@ -74,7 +74,7 @@ def main():
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
     
     # Begin the simulation
-    solve_frequency = 3
+    solve_frequency = 10
     num_simulation_time_steps = 600
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
     prev_state_trajectory = zero_action_state_trajectory
