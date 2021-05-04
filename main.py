@@ -61,26 +61,27 @@ def main():
     orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
     goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
 
-
     solver = SCPAgent(
         num_time_steps_ahead = 600,    
         convergence_tol = 1e-2,
         max_iters = 3, 
         verbose = False
     )
+
     # Set up a feasible initial trajectory
     zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
-    current_state = initial_state
-    prev_state_trajectory = zero_action_state_trajectory
-    prev_input_trajectory = zero_action    
-
+    
+    # Begin the simulation
     num_simulation_time_steps = 300
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
-    
+    prev_state_trajectory = zero_action_state_trajectory
+    prev_input_trajectory = zero_action  
+    current_state = initial_state  
     for i in range(num_simulation_time_steps):
         env.render()
         state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
+        # Plot the first iteration of planned trajectories
         if i == 0:
             plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/'scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
