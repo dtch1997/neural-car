@@ -12,7 +12,6 @@ def nxt(var: cp.Variable):
 def curr(var: cp.Variable):
     return var[:-1]
 
-
 @dataclass
 class SCPAgent:
     """ Sequential convex programming controller, meant to be used with src.envs.car.Environment """
@@ -25,7 +24,7 @@ class SCPAgent:
     # The control problem is reparametrized with different control variables
     state_variable_names: Tuple[str] = Env.state_variable_names
     action_variable_names: Tuple[str] = Env.action_variable_names
-    convergence_metrics: Tuple[str] = ("optimal_value", "state_trajectory")
+    convergence_metrics: Tuple[str] = ("optimal_value")
 
     # Control parameters
     speed_limit = 20
@@ -54,6 +53,8 @@ class SCPAgent:
         return len(self.action_variable_names)
 
     def __post_init__(self):
+        if self.convergence_metric not in self.convergence_metrics:
+            raise ValueError(f"Convergence metric {self.convergence_metric} not recognized. Options: {self.convergence_metrics}")
         self._setup_cp_problem()
 
     def init_obstacles(self, obstacle_centers, obstacle_radii):
