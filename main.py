@@ -89,7 +89,7 @@ def main():
             plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/ 'optimized_scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
         prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
-        next_state = env.take_action(input_trajectory[0])
+        next_state = env.take_action(input_trajectory[i % solve_frequency])
         actual_trajectory[i] = next_state
         current_state = next_state.copy()
 
