@@ -50,7 +50,6 @@ def main():
         frames_per_state=4
     )
     env.reset() 
-    env.reset_history()
 
     # Set up the initial state
     initial_state = env.current_state

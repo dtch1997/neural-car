@@ -45,6 +45,7 @@ class Environment(CarRacing):
         super(Environment, self).reset()
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
+        self.reset_history()
 
     def reset_history(self):
         num_state_vars = len(self.state_variable_names)
