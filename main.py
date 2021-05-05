@@ -8,12 +8,16 @@ from src.agents.car import SCPAgent
 
 OUTPUT_DIR = Path('output')
 
-def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
+def plot_trajectory(initial_state, goal_state, state_trajectory, using_obstacles, zObs, filepath: str):
     fig, ax = plt.subplots(2,3)
     ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], c='black', label = 'Planned trajectory') #vehicle trajectory
     ax[0,0].scatter(goal_state[0], goal_state[1], s=30, c='red', label = 'Goal position')
     ax[0,0].scatter(initial_state[0], initial_state[1], s=30, c='blue', label='Initial position')
     ax[0,0].set_title("Position trajectory")
+
+    if using_obstacles:
+        for i in range(zObs.shape[0]):
+            ax[0,0].scatter(*zObs[i,:], s=30, c='green')
 
     time = np.arange(state_trajectory.shape[0])
     ax[0,1].plot(time, state_trajectory[:,3]) #velocity history
@@ -54,6 +58,7 @@ def main():
     # Set up the initial state
     initial_state = env.current_state
 
+    
     # Set up the final state
     x, y = initial_state[0], initial_state[1]
     theta = initial_state[2]
@@ -61,36 +66,49 @@ def main():
     orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
     goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
 
+    using_obstacles = True
+    zObs = np.array([[12,6],[12,1],[20,3]]) #positions of center of obstacles
+    zObs = np.array([x,y]) + zObs
+    rObs = np.array([[1.78],[1.78],[3.81]]) #radii of obstacles
+    
     solver = SCPAgent(
         num_time_steps_ahead = 600,    
         convergence_tol = 1e-2,
         max_iters = 3, 
         verbose = False
     )
+    
+    solver.init_obstacles(rObs, zObs)
 
     # Set up a feasible initial trajectory
     zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
     
+    #random_action = 0.8*np.random.rand(solver.num_time_steps_ahead, solver.num_actions)-0.4
+    #random_action_state_trajectory = env.rollout_actions(initial_state, random_action)
+    
     # Begin the simulation
-    num_simulation_time_steps = 300
+    #num_simulation_time_steps = 300
+    num_simulation_time_steps = 1
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
     prev_state_trajectory = zero_action_state_trajectory
     prev_input_trajectory = zero_action  
+    #prev_state_trajectory = random_action_state_trajectory
+    #prev_input_trajectory = random_action  
     current_state = initial_state  
     for i in range(num_simulation_time_steps):
         env.render()
         state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
         # Plot the first iteration of planned trajectories
         if i == 0:
-            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/'scp_trajectory.png'))
+            plot_trajectory(initial_state, goal_state, state_trajectory, using_obstacles, zObs, filepath = str(OUTPUT_DIR/'scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
         prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
         next_state = env.take_action(input_trajectory[0])
         actual_trajectory[i] = next_state
         current_state = next_state.copy()
-
-    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = str(OUTPUT_DIR / 'actual_trajectory.png'))
+    
+    plot_trajectory(initial_state, goal_state, actual_trajectory, using_obstacles, zObs, filepath = str(OUTPUT_DIR / 'actual_trajectory.png'))
 
 if __name__ == "__main__":
     main()

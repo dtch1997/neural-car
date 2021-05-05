@@ -39,6 +39,7 @@ class SCPAgent:
     # Obstacle parameters
     obstacle_radii = None 
     obstacle_centers = None
+    using_obstacles = False
 
     # Debug parameters 
     verbose: bool = False
@@ -62,12 +63,13 @@ class SCPAgent:
         """
         self.obstacle_centers = obstacle_centers
         self.obstacle_radii = obstacle_radii
+        self.using_obstacles = True
 
     @property 
     def num_obstacles(self):
         if self.obstacle_centers is None:
             return 0
-        return self.obstacles_centers.shape[0]
+        return self.obstacle_centers.shape[0]
 
     def solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
         """ Perform one SCP solve to find an optimal trajectory """
@@ -143,15 +145,15 @@ class SCPAgent:
         ]
 
         # Obstacle avoidance constraints
-        """
-        rObs = self.obstacle_radii 
-        zObs = self.obstacle_centers
-        zt = xt[:,:2]
-        for o in range(0, self.num_obstacles): #constraints for each obstacle
-            for i in range(1, self.num_time_steps_ahead): #apply constraints to mutable steps
-                constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
-        """
-
+        if self.using_obstacles:
+            rObs = self.obstacle_radii 
+            zObs = self.obstacle_centers
+            zt = xt[:,:2]
+            for o in range(0, self.num_obstacles): #constraints for each obstacle
+                for i in range(1, self.num_time_steps_ahead): #apply constraints to mutable steps
+                    constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
+            
         problem = cp.Problem(objective, constraints)
         optval = problem.solve(solver = self.solver)
+        print(optval)
         return new_state_trajectory.value.copy(), new_input_trajectory.value.copy(), optval, problem.status
