@@ -16,20 +16,26 @@ def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
     ax[0,0].set_title("Position trajectory")
 
     time = np.arange(state_trajectory.shape[0])
-    ax[0,1].plot(time, state_trajectory[:,3]) #velocity history
+    ax[0,1].plot(time, state_trajectory[:,3], label = 'Trajectory') #velocity history
+    ax[0,1].plot(time, np.ones_like(time) * goal_state[3], label= 'Goal')
+    ax[0,1].legend()
     ax[0,1].set_title("Velocity history")
 
-    ax[0,2].plot(time, state_trajectory[:,5]) #acceleration history
+    ax[0,2].plot(time, state_trajectory[:,5], label = 'Trajectory') #acceleration history
+    ax[0,2].plot(time, np.ones_like(time) * goal_state[5], label= 'Goal')
+    ax[0,2].legend()    
     ax[0,2].set_title("Acceleration history")
 
-    ax[1,0].plot(time, state_trajectory[:,2]) #vehicle attitude
+    ax[1,0].plot(time, state_trajectory[:,2], label = 'Trajectory') #vehicle attitude
+    ax[1,0].plot(time, np.ones_like(time) * goal_state[2], label= 'Goal')
+    ax[1,0].legend()
     ax[1,0].set_title("Angle history")
 
-    ax[1,1].plot(time, state_trajectory[:,4]) #curvature history
+    ax[1,1].plot(time, state_trajectory[:,4], label = 'Trajectory') #curvature history
+    ax[1,1].plot(time, np.ones_like(time) * goal_state[4], label= 'Goal')
+    ax[1,1].legend()
     ax[1,1].set_title("Curvature history")
 
-    #ax[1,2].plot(time, np.arctan(ELL * xt[:,4])) #steering angle history
-    #ax[1,2].set_title("Steering angle history")
     plt.savefig(filepath)
 
 def main():
@@ -62,7 +68,7 @@ def main():
     goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
 
     solver = SCPAgent(
-        num_time_steps_ahead = 600,    
+        num_time_steps_ahead = 300,    
         convergence_tol = 1e-2,
         convergence_metric = "optimal_value",
         max_iters = 3, 
@@ -74,8 +80,8 @@ def main():
     zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
     
     # Begin the simulation
-    solve_frequency = 10
-    num_simulation_time_steps = 600
+    solve_frequency = 20
+    num_simulation_time_steps = 1200
     actual_trajectory = np.zeros((num_simulation_time_steps, 7))
     prev_state_trajectory = zero_action_state_trajectory
     prev_input_trajectory = zero_action  
