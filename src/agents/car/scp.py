@@ -123,6 +123,9 @@ class SCPAgent:
         ]
 
         # Dynamics constraints 
+        # This part is not DPP due to multiplication of parameters. 
+        # We could make it DPP but it'd be quite a substantial effort and I'm not sure it's worthwhile
+        # Also the obstacle avoidance constraints might end up not being DPP anyway
         constraints += [
             nxt(x[:,0]) == curr(x[:,0]) + h * ( #xpos constraint x[:,0]
                     cp.multiply(curr(x[:,3]), curr(cos_prev_theta))
@@ -142,6 +145,7 @@ class SCPAgent:
             nxt(x[:,6]) == curr(x[:,6]) + h * u[:,1], #pinch constraint x[:,6]
         ]
 
+
         # Control limit constraints
         constraints += [
             cp.norm(x[:,3], p=np.inf)  <= self.speed_limit, #max forwards velocity (speed limit)
@@ -160,6 +164,7 @@ class SCPAgent:
                     constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
 
         problem = cp.Problem(objective, constraints)
+        
         self.parameters = AttrDict.from_dict({
             'initial_state': initial_state,
             'goal_state': goal_state,
@@ -172,6 +177,7 @@ class SCPAgent:
             'input_trajectory': new_input_trajectory
         })
         self.problem = problem
+        
 
     def reset(self, env):
         self._current_state = env.current_state
