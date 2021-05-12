@@ -19,6 +19,7 @@ def get_args():
 
     parser = agent_class.add_argparse_args(parser)
     parser = environment_class.add_argparse_args(parser)
+    parser = runner_class.add_argparse_args(parser)
     return parser.parse_args()
 
 def main(args):
