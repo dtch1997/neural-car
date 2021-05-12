@@ -1,6 +1,7 @@
 import numpy as np
 
 from .attrdict import *
+from .viz import *
 
 def rotate_by_angle(vec, th):
     """ Rotate a 2D vector by angle

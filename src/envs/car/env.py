@@ -100,8 +100,8 @@ class Environment(CarRacing):
         gas_action = (1/500) * accel  # Polo's magic constant
         brake_action = 0
         env_action = np.array([steering_action, gas_action, brake_action])
-        self.step(env_action)
+        _, reward, done, info = self.step(env_action)
         self._current_state = np.concatenate([self._get_env_vars(), next_state[5:7]])
         
-        return self.current_state
+        return self.current_state, reward, done, info
         

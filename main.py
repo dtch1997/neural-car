@@ -2,41 +2,12 @@ import numpy as np
 
 from pathlib import Path
 from matplotlib import pyplot as plt
-from src.utils import rotate_by_angle
+
+from src.utils import rotate_by_angle, plot_trajectory
 from src.envs.car import Environment 
 from src.agents.car import SCPAgent
 
 OUTPUT_DIR = Path('output')
-
-def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str):
-    fig, ax = plt.subplots(2,3)
-    ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], c='black', label = 'Planned trajectory') #vehicle trajectory
-    ax[0,0].scatter(goal_state[0], goal_state[1], s=30, c='red', label = 'Goal position')
-    ax[0,0].scatter(initial_state[0], initial_state[1], s=30, c='blue', label='Initial position')
-    ax[0,0].set_title("Position trajectory")
-
-    time = np.arange(state_trajectory.shape[0])
-    ax[0,1].plot(time, state_trajectory[:,3], label = 'Trajectory') #velocity history
-    ax[0,1].plot(time, np.ones_like(time) * goal_state[3], label= 'Goal')
-    ax[0,1].legend()
-    ax[0,1].set_title("Velocity history")
-
-    ax[0,2].plot(time, state_trajectory[:,5], label = 'Trajectory') #acceleration history
-    ax[0,2].plot(time, np.ones_like(time) * goal_state[5], label= 'Goal')
-    ax[0,2].legend()    
-    ax[0,2].set_title("Acceleration history")
-
-    ax[1,0].plot(time, state_trajectory[:,2], label = 'Trajectory') #vehicle attitude
-    ax[1,0].plot(time, np.ones_like(time) * goal_state[2], label= 'Goal')
-    ax[1,0].legend()
-    ax[1,0].set_title("Angle history")
-
-    ax[1,1].plot(time, state_trajectory[:,4], label = 'Trajectory') #curvature history
-    ax[1,1].plot(time, np.ones_like(time) * goal_state[4], label= 'Goal')
-    ax[1,1].legend()
-    ax[1,1].set_title("Curvature history")
-
-    plt.savefig(filepath)
 
 def main():
     # Create output directory if it doesn't exist yet
@@ -95,7 +66,7 @@ def main():
             plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/ 'optimized_scp_trajectory.png'))
         prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
         prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
-        next_state = env.take_action(input_trajectory[i % solve_frequency])
+        next_state, reward, done, info = env.take_action(input_trajectory[i % solve_frequency])
         actual_trajectory[i] = next_state
         current_state = next_state.copy()
 
