@@ -21,6 +21,29 @@ class Environment(CarRacing):
     state_variable_names = ("xpos", "ypos", "theta", "velocity", "kappa", "accel", "pinch")
     action_variable_names = ("jerk", "juke")
 
+    def __init__(self):
+        # Fix these options for now. We can support alternate options in the future
+        super(Environment, self).__init__(            
+            allow_reverse=True,
+            grayscale=1,
+            show_info_panel=1,
+            discretize_actions=None,
+            num_obstacles=100,
+            num_tracks=1,
+            num_lanes=1,
+            num_lanes_changes=4,
+            max_time_out=0,
+            frames_per_state=4
+        )
+
+    @staticmethod 
+    def add_argparse_args(parser):
+        return parser 
+    
+    @staticmethod 
+    def from_argparse_args(args):
+        return Environment()
+
     @property 
     def time_step_duration(self):
         return 1 / self.constants.fps
@@ -37,12 +60,27 @@ class Environment(CarRacing):
     def current_state(self):
         return self._current_state.copy()
 
+    @property 
+    def goal_state(self):
+        return self._goal_state.copy()
+
     def reset(self):
         super(Environment, self).reset()
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
+        # Set up the initial state
+        initial_state = self.current_state
+
+        # Set up the final state
+        x, y = initial_state[0], initial_state[1]
+        theta = initial_state[2]
+        direction = np.array([np.cos(theta), np.sin(theta),0,0])
+        orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
+        self._goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
+
 
     def get_next_state(self, state, action):
+        """ Simulate one step of nonlinear dynamics """
         h = self.time_step_duration 
         next_state = np.zeros_like(state)
         next_state[0] = state[0] + h * state[3] * np.cos(state[2])  # xpos 

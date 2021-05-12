@@ -33,9 +33,10 @@ class SCPAgent:
     pinch_limit = 3 / Env.constants.ell
 
     # Solver parameters
+    solve_frequency: int = 20
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
-    max_iters: int = 100
+    max_iters: int = 3
     solver = cp.ECOS
 
     # Obstacle parameters
@@ -44,6 +45,14 @@ class SCPAgent:
 
     # Debug parameters 
     verbose: bool = False
+
+    @staticmethod 
+    def add_argparse_args(parser):
+        return parser 
+
+    @staticmethod 
+    def from_argparse_args(parser):
+        return SCPAgent()
 
     @property
     def num_states(self):
@@ -66,6 +75,12 @@ class SCPAgent:
         self.obstacle_centers = obstacle_centers
         self.obstacle_radii = obstacle_radii
         self._setup_cp_problem()
+
+    @property 
+    def num_obstacles(self):
+        if self.obstacle_centers is None:
+            return 0
+        return self.obstacles_centers.shape[0]
 
     def _setup_cp_problem(self):
         """ Set up the CVXPY problem once following DPP principles. 
@@ -154,13 +169,28 @@ class SCPAgent:
         })
         self.problem = problem
 
-    @property 
-    def num_obstacles(self):
-        if self.obstacle_centers is None:
-            return 0
-        return self.obstacles_centers.shape[0]
+    def reset(self, env):
+        self._current_state = env.current_state
+        self._goal_state = env.goal_state
+        self._prev_input_trajectory = np.zeros((self.num_time_steps_ahead, self.num_actions)) 
+        self._prev_state_trajectory = env.rollout_actions(self._current_state, self._prev_input_trajectory)
+        self._time = 0
 
-    def solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
+    def get_action(self, current_state):
+        def forward(trajectory: np.ndarray, num_time_steps: int):
+            """ Advance num_time_steps along a trajectory, copying the last value """
+            return np.concatenate([trajectory[num_time_steps:]] + [trajectory[-1][np.newaxis,:]] * num_time_steps)
+        if self._time % self.solve_frequency == 0:
+            self._state_trajectory, self._input_trajectory = self._solve(
+                current_state, 
+                self._goal_state, 
+                self._prev_state_trajectory, 
+                self._prev_input_trajectory
+            )
+        self._time += 1
+        return self._input_trajectory[self._time % self.solve_frequency]
+
+    def _solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
         """ Perform one SCP solve to find an optimal trajectory """
         diff = self.convergence_tol + 1
         prev_state_trajectory = initial_state_trajectory

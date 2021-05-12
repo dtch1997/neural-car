@@ -1,77 +1,38 @@
-import numpy as np
+from simple_parsing import ArgumentParser
+from src.agents import registry as agent_registry
+from src.envs import registry as environment_registry
+from src.runners import registry as runner_registry
 
-from pathlib import Path
-from matplotlib import pyplot as plt
+def get_args():
+    parser = ArgumentParser()
+    parser.add_argument('--runner', default = 'test', choices = ('train', 'test'), 
+                        help = "Specify whether to train or test an agent")
+    parser.add_argument('--environment', default = "car", choices = ("car"), 
+                        help = "Environment to train/test agent on")
+    parser.add_argument('--agent', default = 'scp', choices = ('scp'),
+                        help = 'Agent to train/test')
 
-from src.utils import rotate_by_angle, plot_trajectory
-from src.envs.car import Environment 
-from src.agents.car import SCPAgent
+    args, _ = parser.parse_known_args()
+    runner_class = runner_registry[args.runner]
+    agent_class = agent_registry[args.agent]
+    environment_class = environment_registry[args.environment]
 
-OUTPUT_DIR = Path('output')
+    parser = agent_class.add_argparse_args(parser)
+    parser = environment_class.add_argparse_args(parser)
+    return parser.parse_args()
 
-def main():
-    # Create output directory if it doesn't exist yet
-    if not OUTPUT_DIR.exists():
-        OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
-
-    env = Environment(    
-        allow_reverse=True,
-        grayscale=1,
-        show_info_panel=1,
-        discretize_actions=None,
-        num_obstacles=100,
-        num_tracks=1,
-        num_lanes=1,
-        num_lanes_changes=4,
-        max_time_out=0,
-        frames_per_state=4
-    )
-    env.reset() 
-
-    # Set up the initial state
-    initial_state = env.current_state
-
-    # Set up the final state
-    x, y = initial_state[0], initial_state[1]
-    theta = initial_state[2]
-    direction = np.array([np.cos(theta), np.sin(theta),0,0])
-    orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
-    goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
-
-    solver = SCPAgent(
-        num_time_steps_ahead = 300,    
-        convergence_tol = 1e-2,
-        convergence_metric = "optimal_value",
-        max_iters = 3, 
-        verbose = True
-    )
-
-    # Set up a feasible initial trajectory
-    zero_action = np.zeros((solver.num_time_steps_ahead, solver.num_actions)) 
-    zero_action_state_trajectory = env.rollout_actions(initial_state, zero_action)
+def main(args):
+    runner_class = runner_registry[args.runner]
+    agent_class = agent_registry[args.agent]
+    environment_class = environment_registry[args.environment]
     
-    # Begin the simulation
-    solve_frequency = 20
-    num_simulation_time_steps = 1200
-    actual_trajectory = np.zeros((num_simulation_time_steps, 7))
-    prev_state_trajectory = zero_action_state_trajectory
-    prev_input_trajectory = zero_action  
-    current_state = initial_state  
-    for i in range(num_simulation_time_steps):
-        env.render()
-        if i % solve_frequency == 0:
-            state_trajectory, input_trajectory = solver.solve(current_state, goal_state, prev_state_trajectory, prev_input_trajectory)
-        # Plot the first iteration of planned trajectories
-        if i == 0:
-            plot_trajectory(initial_state, goal_state, state_trajectory, filepath = str(OUTPUT_DIR/ 'optimized_scp_trajectory.png'))
-        prev_state_trajectory = np.concatenate([state_trajectory[1:], state_trajectory[-1][np.newaxis, :]], axis=0) 
-        prev_input_trajectory = np.concatenate([input_trajectory[1:], input_trajectory[-1][np.newaxis, :]], axis=0) 
-        next_state, reward, done, info = env.take_action(input_trajectory[i % solve_frequency])
-        actual_trajectory[i] = next_state
-        current_state = next_state.copy()
+    agent = agent_class.from_argparse_args(args)
+    env = environment_class.from_argparse_args(args)
+    runner = runner_class.from_argparse_args(args, env, agent)
 
-    plot_trajectory(initial_state, goal_state, actual_trajectory, filepath = str(OUTPUT_DIR / 'optimized_actual_trajectory.png'))
+    runner.run()
 
 if __name__ == "__main__":
-    main()
+    args = get_args()
+    main(args)
     
