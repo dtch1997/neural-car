@@ -10,10 +10,11 @@ class EvaluationRunner:
     def __init__(self, args, env, agent):
         self.env = env
         self.agent = agent
-        self.num_simulation_time_steps = 1200
+        self.num_simulation_time_steps = args.num_simulation_time_steps
 
     @staticmethod 
     def add_argparse_args(parser):
+        parser.add_argument("--num-simulation-time-steps", type=int, default=1200)
         return parser 
 
     @staticmethod 
