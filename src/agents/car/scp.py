@@ -40,20 +40,25 @@ class SCPAgent:
     solver = cp.ECOS
 
     # Obstacle parameters
-    obstacle_radii = None 
-    obstacle_centers = None
-    using_obstacles = False
+    obstacle_radii: np.ndarray = None 
+    obstacle_centers: np.ndarray = None
+    using_obstacles: bool = False
 
     # Debug parameters 
     verbose: bool = False
 
     @staticmethod 
     def add_argparse_args(parser):
+        parser.add_argument('--obstacle-radii', default = None)
+        parser.add_argument('--obstacle-centers', default = None)
         return parser 
 
     @staticmethod 
-    def from_argparse_args(parser):
-        return SCPAgent()
+    def from_argparse_args(args):
+        return SCPAgent(
+            obstacle_radii = args.obstacle_radii,
+            obstacle_centers = args.obstacle_centers
+        )
 
     @property
     def num_states(self):

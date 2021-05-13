@@ -1,5 +1,6 @@
-from .car import SCPAgent
+from .car import SCPAgent, NeuralNetAgent
 
 registry = {
-    'scp': SCPAgent
+    'scp': SCPAgent,
+    'nn': NeuralNetAgent
 }

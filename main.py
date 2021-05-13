@@ -7,9 +7,9 @@ def get_args():
     parser = ArgumentParser()
     parser.add_argument('--runner', default = 'test', choices = ('train', 'test'), 
                         help = "Specify whether to train or test an agent")
-    parser.add_argument('--environment', default = "car", choices = ("car"), 
+    parser.add_argument('--environment', default = "car", choices = ('car',), 
                         help = "Environment to train/test agent on")
-    parser.add_argument('--agent', default = 'scp', choices = ('scp'),
+    parser.add_argument('--agent', default = 'scp', choices = ('scp', 'nn'),
                         help = 'Agent to train/test')
 
     args, _ = parser.parse_known_args()
