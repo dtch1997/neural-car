@@ -1,5 +1,5 @@
 # AA203 - Neural Car Controller
-Train a neural network to emulate a MPC controller for Dubin's car
+Train a neural network to emulate a MPC controller for a Reed-Shepp car
 
 ## Getting Started
 With Anaconda / Miniconda:
