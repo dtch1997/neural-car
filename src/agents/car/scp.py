@@ -27,7 +27,7 @@ class SCPAgent:
     convergence_metrics: Tuple[str] = ("optimal_value")
 
     # Control parameters
-    speed_limit = 20
+    speed_limit = 10
     kappa_limit = np.tan(0.4) / Env.constants.ell
     accel_limit = 1
     pinch_limit = 3 / Env.constants.ell
@@ -36,7 +36,7 @@ class SCPAgent:
     solve_frequency: int = 20
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
-    max_iters: int = 3
+    max_iters: int = 10
     solver = cp.ECOS
 
     # Obstacle parameters
@@ -51,13 +51,15 @@ class SCPAgent:
     def add_argparse_args(parser):
         parser.add_argument('--obstacle-radii', default = None)
         parser.add_argument('--obstacle-centers', default = None)
+        parser.add_argument('--num-time-steps-ahead', type = int, default = 200)
         return parser 
 
     @staticmethod 
     def from_argparse_args(args):
         return SCPAgent(
             obstacle_radii = args.obstacle_radii,
-            obstacle_centers = args.obstacle_centers
+            obstacle_centers = args.obstacle_centers,
+            num_time_steps_ahead = args.num_time_steps_ahead
         )
 
     @property
@@ -112,8 +114,12 @@ class SCPAgent:
         u = new_input_trajectory
 
         objective = cp.Minimize(
-            self.time_step_duration * cp.sum_squares(u) \
-            + cp.norm(x[-1,:] - goal_state, p=1)
+            self.time_step_duration * cp.sum_squares(u) / self.num_time_steps_ahead
+            + 100 * cp.norm(x[-1,:] - goal_state, p=1)
+            + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
+            + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
+            + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
+            + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))
         )
         assert objective.is_dpp()
 
@@ -144,6 +150,7 @@ class SCPAgent:
                     cp.multiply(curr(x[:,3]), curr(prev_kappa))
                     + cp.multiply(curr(prev_veloc), curr(x[:,4]) - curr(prev_kappa))
                 ),
+                
             nxt(x[:,3]) == curr(x[:,3]) + h * curr(x[:,5]), #velocity constraint x[:,3]
             nxt(x[:,4]) == curr(x[:,4]) + h * curr(x[:,6]), #kappa constraint x[:,4]
             nxt(x[:,5]) == curr(x[:,5]) + h * u[:,0], #acceleration constraint x[:,5]
@@ -152,14 +159,17 @@ class SCPAgent:
 
 
         # Control limit constraints
+        """
         constraints += [
             cp.norm(x[:,3], p=np.inf)  <= self.speed_limit, #max forwards velocity (speed limit)
             cp.norm(x[:,4], p=np.inf)  <= self.kappa_limit, #maximum curvature
             cp.norm(x[:,5], p=np.inf) <= self.accel_limit, #max acceleration
             cp.norm(x[:,6], p=np.inf) <= self.pinch_limit #max pinch
         ]
+        """
 
         # TODO: Obstacle constraints
+        """
         if self.obstacle_radii is not None and self.obstacle_centers is not None:
             rObs = self.obstacle_radii 
             zObs = self.obstacle_centers
@@ -167,7 +177,7 @@ class SCPAgent:
             for o in range(0, self.num_obstacles): #constraints for each obstacle
                 for i in range(1, self.num_time_steps_ahead): #apply constraints to mutable steps
                     constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
-
+        """
         problem = cp.Problem(objective, constraints)
         
         self.parameters = AttrDict.from_dict({

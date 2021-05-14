@@ -11,16 +11,19 @@ class EvaluationRunner:
         self.env = env
         self.agent = agent
         self.num_simulation_time_steps = args.num_simulation_time_steps
-        self.saved_filepath = args.save_filepath
+        self.save_filepath = args.save_filepath
         self.num_rollouts = args.num_rollouts
         self.dist_threshold = args.dist_threshold
+
+    def get_savepath(self):
+        return str(OUTPUT_DIR / self.save_filepath)
 
     @staticmethod 
     def add_argparse_args(parser):
         parser.add_argument("--num-simulation-time-steps", type=int, default=1200)
-        parser.add_argument("--save-filepath", default="saved_data.csv")
         parser.add_argument("--num-rollouts", type=int, default=5)
-        parser.add_argument("--dist-threshold", type=int, default=0.2)
+        parser.add_argument("--dist-threshold", type=int, default=1)
+        parser.add_argument("--save-filepath", type=str, default = 'trajectory.npz')
         return parser 
 
     @staticmethod 
@@ -28,36 +31,43 @@ class EvaluationRunner:
         return EvaluationRunner(args, env, agent)
 
     def run(self):
-        delta_x, delta_y, delta_th = (10,10,np.pi/4)
-        relative_goal = np.array([delta_x,delta_y,delta_th])
-        self.env.reset(relative_goal) 
-        self.agent.reset(self.env)
-
         actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.agent.num_states))
-        initial_state = self.env.current_state
-        current_state = self.env.current_state
-        actual_trajectory[0] = current_state
 
-        data =  np.zeros((1, self.agent.num_states+self.agent.num_actions))
+        data =  np.zeros((self.num_rollouts * self.num_simulation_time_steps, self.agent.num_states+self.agent.num_actions))
+        data_len = 0
 
         for i in range(self.num_rollouts):
-            for i in range(self.num_simulation_time_steps):
-                self.env.render()
-                action = self.agent.get_action(current_state)
-                if i == 0:
-                    data = np.hstack(current_state, action)
-                else:
-                    data = np.vstack(data, np.hstack(current_state, action))
-                next_state, reward, done, info = self.env.take_action(action)            
-                current_state = next_state
-                actual_trajectory[i+1] = current_state
-                if np.linalg.norm(current_state[:3], relative_goal) < self.dist_threshold:
-                    break
             delta_x, delta_y, delta_th = (*10*np.random.rand(2),np.pi*np.random.rand()-np.pi/2)
             relative_goal = np.array([delta_x,delta_y,delta_th])
-            self.env.reset(relative_goal)
+            self.env.reset(relative_goal) 
+            self.agent.reset(self.env)
 
-        np.savetxt("saved_data.csv", data, delimiter=",")
+            initial_state = self.env.current_state
+            current_state = self.env.current_state
+            actual_trajectory[0] = current_state
+
+            print(self.env.current_state)
+            print(self.env.goal_state)
+            for j in range(self.num_simulation_time_steps):
+                self.env.render()
+                action = self.agent.get_action(current_state)
+                
+                data[data_len] = np.concatenate([current_state, action])
+                data_len += 1
+
+                next_state, reward, done, info = self.env.take_action(action)            
+                current_state = next_state
+                actual_trajectory[j+1] = current_state
+
+                diff = current_state[:3] - self.env.goal_state[:3]
+                # TODO: Normalize theta to be between 0 and 2pi when calculating difference
+                print(diff)
+                if np.linalg.norm(diff).item() < self.dist_threshold:
+                    break
+
+
+            plot_trajectory(initial_state, self.env.goal_state, actual_trajectory[:j], str(OUTPUT_DIR / f'actual_trajectory_{i}.png'))
+
         OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-        plot_trajectory(initial_state, self.env.goal_state, actual_trajectory, str(OUTPUT_DIR / 'actual_trajectory.png'))
+        np.save(self.get_savepath(), data)
         return actual_trajectory
