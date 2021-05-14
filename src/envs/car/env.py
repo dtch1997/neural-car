@@ -64,7 +64,7 @@ class Environment(CarRacing):
     def goal_state(self):
         return self._goal_state.copy()
 
-    def reset(self):
+    def reset(self, relative_goal):
         super(Environment, self).reset()
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
@@ -74,10 +74,10 @@ class Environment(CarRacing):
         # Set up the final state
         x, y = initial_state[0], initial_state[1]
         theta = initial_state[2]
-        direction = np.array([np.cos(theta), np.sin(theta),0,0])
-        orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
-        self._goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
-
+        #direction = np.array([np.cos(theta), np.sin(theta),0,0])
+        #orth_direction = np.array([*rotate_by_angle(direction[:2], np.pi/2),0,0])
+        #self._goal_state = np.array([x, y, theta, 0, 0, 0, 0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
+        self._goal_state = np.hstack(np.array([x, y, theta]+relative_goal,np.array([0, 0, 0, 0])
 
     def get_next_state(self, state, action):
         """ Simulate one step of nonlinear dynamics """
