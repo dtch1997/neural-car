@@ -64,10 +64,20 @@ class Environment(CarRacing):
     def goal_state(self):
         return self._goal_state.copy()
 
-    def reset(self, relative_goal):
+    @property 
+    def obstacle_centers(self):
+        return self._obstacle_centers.copy()
+
+    @property 
+    def obstacle_radii(self):
+        return self._obstacle_radii.copy()
+
+    def reset(self, relative_goal, obstacle_centers = None, obstacle_radii = None):
         super(Environment, self).reset()
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
+        self._obstacle_centers = obstacle_centers
+        self._obstacle_radii = obstacle_radii
 
         # Set up the final state
         initial_state = self.current_state

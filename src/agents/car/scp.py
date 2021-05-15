@@ -72,17 +72,6 @@ class SCPAgent:
     def __post_init__(self):
         if self.convergence_metric not in self.convergence_metrics:
             raise ValueError(f"Convergence metric {self.convergence_metric} not recognized. Options: {self.convergence_metrics}")
-        self._setup_cp_problem()
-
-    def init_obstacles(self, obstacle_centers, obstacle_radii):
-        """ Initializes obstacles that the solver avoids 
-
-        :param obstacle_centers: np.ndarray of shape (num_obstacles, 2)
-        :param obstacle_radii: np.ndarray of shape (num_obstacles, 1)
-        """
-        self.obstacle_centers = obstacle_centers
-        self.obstacle_radii = obstacle_radii
-        self._setup_cp_problem()
 
     @property 
     def num_obstacles(self):
@@ -168,16 +157,22 @@ class SCPAgent:
         ]
         """
 
-        # TODO: Obstacle constraints
-        """
-        if self.obstacle_radii is not None and self.obstacle_centers is not None:
-            rObs = self.obstacle_radii 
-            zObs = self.obstacle_centers
-            zt = xt[:,:2]
-            for o in range(0, self.num_obstacles): #constraints for each obstacle
-                for i in range(1, self.num_time_steps_ahead): #apply constraints to mutable steps
-                    constraints += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:]) / cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
-        """
+        # Obstacle constraints
+        zObs = self._obstacle_centers 
+        rObs = self._obstacle_radii
+        rTotal = np.repeat(rObs,self.num_time_steps_ahead,axis=1)
+
+        zt = xt[:,:2] #saving only the positional values in the trajectory (for obstacle avoidance)
+        zDiffs = cp.Parameter((self.num_time_steps_ahead,2))
+        zSub = np.transpose(np.repeat(np.expand_dims(zt,axis=2), self.num_obstacles,axis=2),axes=(2,0,1)) \
+            - np.transpose(np.repeat(np.expand_dims(zObs,axis=2),self.num_time_steps_ahead,axis=2),axes=(0,2,1)) #OxNx2 tensor containing differences between each position in the trajectory and obstacle center
+        zSubNorms = np.linalg.norm(zSub,ord=2,axis=(-1))#OxN matrix of Euclidean distances between each position in the trajectory and each obstacle center
+        zDiffs = x[:,:2] - zt #difference between current and prior position trajectory
+        
+        for o in range(self.num_obstacles): #because CVXPY can't use 3D tensors for whatever reason
+            constraints += [rTotal[o,:] - zSubNorms[o,:] - cp.sum(cp.multiply(zSub[o,:,:],zDiffs),axis=1)/zSubNorms[o,:] <= 0] #one constraint per obstacle
+
+        # Set up cp.Problem
         problem = cp.Problem(objective, constraints)
         
         self.parameters = AttrDict.from_dict({
@@ -193,10 +188,12 @@ class SCPAgent:
         })
         self.problem = problem
         
-
     def reset(self, env):
         self._current_state = env.current_state
         self._goal_state = env.goal_state
+        self._obstacle_centers = env.obstacle_centers
+        self._obstacle_radii = env.obstacle_radii
+        self._setup_cp_problem()
         self._prev_input_trajectory = np.zeros((self.num_time_steps_ahead, self.num_actions)) 
         self._prev_state_trajectory = env.rollout_actions(self._current_state, self._prev_input_trajectory)
         self._time = 0

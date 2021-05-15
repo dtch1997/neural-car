@@ -32,14 +32,16 @@ class EvaluationRunner:
 
     def run(self):
         actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.agent.num_states))
-
         data =  np.zeros((self.num_rollouts * self.num_simulation_time_steps, self.agent.num_states+self.agent.num_actions))
         data_len = 0
 
         for i in range(self.num_rollouts):
-            delta_x, delta_y, delta_th = (*10*np.random.rand(2),np.pi*np.random.rand()-np.pi/2)
+            delta_x, delta_y, delta_th = (*np.random.uniform(low = -10, high = 10, size = 2), np.pi * np.random.uniform()-np.pi/2)
             relative_goal = np.array([delta_x,delta_y,delta_th])
-            self.env.reset(relative_goal) 
+            obstacle_centers = np.random.uniform(low = -10, high = 10, size = (10, 2))
+            obstacle_radii = np.ones(shape = (10, 1), dtype = np.float32)
+
+            self.env.reset(relative_goal, obstacle_centers, obstacle_radii) 
             self.agent.reset(self.env)
 
             initial_state = self.env.current_state
@@ -66,7 +68,14 @@ class EvaluationRunner:
                     break
 
 
-            plot_trajectory(initial_state, self.env.goal_state, actual_trajectory[:j], str(OUTPUT_DIR / f'actual_trajectory_{i}.png'))
+            plot_trajectory(
+                initial_state = initial_state, 
+                goal_state = self.env.goal_state, 
+                state_trajectory = actual_trajectory[:j], 
+                filepath = str(OUTPUT_DIR / f'actual_trajectory_{i}.png'), 
+                obstacle_centers = self.env.obstacle_centers, 
+                obstacle_radii = self.env.obstacle_radii
+            )
 
         OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
         np.save(self.get_savepath(), data)
