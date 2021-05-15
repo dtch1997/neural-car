@@ -458,7 +458,7 @@ def main():
     # solver.update_state(initial_state)
 
 
-    NUM_TIME_STEPS = 1
+    NUM_TIME_STEPS = 1200
     actual_trajectory = np.zeros([NUM_TIME_STEPS, 7])
     first = True
     fig, ax = plt.subplots(2,3)
@@ -471,12 +471,13 @@ def main():
     NavigatioN = 1200 #number of time steps in a single solve
     #xFinal = np.array([x_extract,y,theta,0,0,0,0]) + np.array([10,10,0,0,0,0,0]) * np.hstack((direction,np.array([0,0,0]))) + np.array([10,10,0,0,0,0,0]) * np.hstack((orth_direction,np.array([0,0,0]))) #coordinates of goal location and characteristics
     #xFinal = np.array([x_extract,y,theta,0,0,0,0]) + np.array([-10,10,0,0,0,0,0])
-    xFinal = np.array([x_extract,y,theta,0,0,0,0]) + 8 * np.hstack((direction,np.array([0,0,0]))) - 30 * np.hstack((orth_direction,np.array([0,0,0])))
+    xFinal = np.array([x_extract,y,theta,0,0,0,0]) + 30 * np.hstack((direction,np.array([0,0,0]))) + 8 * np.hstack((orth_direction,np.array([0,0,0])))
     print("target: ",xFinal)
 
     h = 0.02 #50Hz
     # h = 0.04 #25Hz (debug)
-    epsilon = 0.01
+    epsilon = 0.01 #to check convergence of cost function
+    state_epsilon = 0.01 #to check drift from controller trajectory
 
     #DECLARATION OF CONTROL LIMITS
     speed_limit = 20
@@ -491,7 +492,8 @@ def main():
     zObs = np.array([x_extract,y]) + zObs
     rObs = np.array([[2.06],[1.78],[1.78],[3.81],[1.66],[1.56]]) #radii of obstacles
     # rObs = np.array([[2.06]])
-    obstacles = len(rObs) #total number of obstacles to dodge
+    obstacles = np.shape(rObs)[0] #total number of obstacles to dodge
+    rTotal = np.repeat(rObs,NavigatioN,axis=1) #repeated instances of the obstacle radii, one for each time step (for obstacle avoidance)
 
     #DECLARATION OF TRAJECTORY VALUES
     xt = np.random.rand(NavigatioN,7) #arbitrary stand-in for previous solution state trajectory
@@ -507,9 +509,11 @@ def main():
 			#DEFINITION OF INITIAL TRAJECTORY ROLLOUT AT FIRST STEP
             xInitial = np.array([initial_state['xpos'],initial_state['ypos'],initial_state['theta'],0,0,0,0]) #Coordinates of initial position of car: x,y,theta,V,kappa,acceleration,pinch
             #print("start: ",xInitial)
-            for i in range(1,NavigatioN):
-                # xt[i,:] = xInitial+(((xFinal-xInitial)/NavigatioN)*i) #linear interpolation for lowest cost path with no obstacles and no dynamics constraints
-                xt[i,:] = xInitial #rollout from no control inputs, from static start
+            xt = np.repeat(np.reshape(xInitial,(1,np.shape(xInitial)[0])),NavigatioN,axis=0)
+            # for i in range(1,NavigatioN):
+            #     # xt[i,:] = xInitial+(((xFinal-xInitial)/NavigatioN)*i) #linear interpolation for lowest cost path with no obstacles and no dynamics constraints
+            #     xt[i,:] = xInitial #rollout from no control inputs, from static start
+            state_diff = np.inf
 
         else:
             #INITIAL TRAJECTORY ROLLOUT FOR STEPS BEYOND THE FIRST
@@ -519,17 +523,18 @@ def main():
             xInitial = np.array([initial_state['xpos'],initial_state['ypos'],initial_state['theta'],initial_state['velocity'],initial_state['kappa'],initial_state['accel'],initial_state['pinch']]) #current state defines starting point for solve
             xt[:-1,:] = xt[1:,:] #use of previous solution as initialization for trajectory (last state is kept from last time, a duplicate)
             ut[:-1,:] = ut[1:,:]
+            state_diff = np.linalg.norm(xt[0,:] - xInitial,ord=2) #discrepancy between solver estimation of next state and recovered state
+            print('error in state estimation: ',state_diff)
             #print(ut)
 
         #INITIALIZATION OF LOOP CONTROL VALUES
         diff = np.inf #initialize to unreasonable value to overwrite in loop
 
-        while abs(diff) > epsilon:
+        while abs(diff) > epsilon and abs(state_diff) > state_epsilon:
             #CALCULATION OF OBJECTIVE VALUE WITH PRIOR SOLUTION
             prevGas = h*np.linalg.norm(ut,'fro')**2 + np.linalg.norm(xFinal - xt[-1,:],1) #objective value with prior trajectory
             print('prev: ',prevGas)
 
-            zt = xt[:,:2] #saving only the positional values in the trajectory (for obstacle avoidance)
             prev_theta = xt[:,2] #history of angles
             prev_veloc = xt[:,3] #history of velocities
             prev_kappa = xt[:,4] #history of curvatures
@@ -540,7 +545,7 @@ def main():
             #velVec = cp.Variable((NavigatioN,2)) #vector of instantaneous acceleration (for traction control)
 
             objectNav = cp.Minimize(h*cp.square(cp.norm(u,'fro')) + cp.norm(xFinal - x[-1,:],1)) #objective function
-
+            
             constrNav = [] #initialize constraints list
 
             #INITIAL POSITION
@@ -570,6 +575,7 @@ def main():
             #CONTROL LIMIT CONSTRAINTS:
             constrNav += [
                 cp.norm(x[1:,3], p=np.inf) <= speed_limit, #max forwards velocity (speed limit)
+                #2*cp.multiply(cp.multiply(prev_veloc,prev_kappa),x[:,3] - prev_veloc) + cp.multiply(cp.multiply(prev_veloc,prev_veloc),x[:,4]) <= accel_limit, #max forwards velocity (to prevent slipping)
                 x[1:,4] <= kappa_limit, #maximum curvature
                 x[1:,4] >= -1*kappa_limit,
                 cp.norm(x[:,5], p=np.inf) <= accel_limit, #max acceleration
@@ -583,9 +589,23 @@ def main():
             #     constrNav += [cp.norm(velVec[i,:],2) <= accel_limit] #skid prevention at step i
 
             #OBSTACLE AVOIDANCE CONSTRAINTS
-            for o in range(0,obstacles): #constraints for each obstacle
-             	for i in range(1,NavigatioN): #apply constraints to mutable steps
-                     constrNav += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:])/cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
+            zt = xt[:,:2] #saving only the positional values in the trajectory (for obstacle avoidance)
+            zDiffs = cp.Parameter((NavigatioN,2))
+            zSub = np.transpose(np.repeat(np.expand_dims(zt,axis=2),obstacles,axis=2),axes=(2,0,1)) \
+                - np.transpose(np.repeat(np.expand_dims(zObs,axis=2),NavigatioN,axis=2),axes=(0,2,1)) #OxNx2 tensor containing differences between each position in the trajectory and obstacle center
+            zSubNorms = np.linalg.norm(zSub,ord=2,axis=(-1))#OxN matrix of Euclidean distances between each position in the trajectory and each obstacle center
+            zDiffs = x[:,:2] - zt #difference between current and prior position trajectory
+            
+            # zInter = np.einsum('ijk,ij->ik',np.transpose(zSub,axes=(1,2,0)),zDiffs).T #OxN matrix
+            # zInter = np.einsum('ijk,ij->ik',np.transpose(zSub,axes=(1,2,0)),x[:,:2] - zt).T #OxN matrix
+            # constrNav += [rTotal - zSubNorms - zInter/zSubNorms <= 0] #the truly parallelized version
+            
+            for o in range(obstacles): #because CVXPY can't use 3D tensors for whatever reason
+                constrNav += [rTotal[o,:] - zSubNorms[o,:] - cp.sum(cp.multiply(zSub[o,:,:],zDiffs),axis=1)/zSubNorms[o,:] <= 0] #one constraint per obstacle
+            
+            # for o in range(0,obstacles): #constraints for each obstacle
+            #  	for i in range(1,NavigatioN): #apply constraints to mutable steps individually
+            #          constrNav += [rObs[o] - cp.norm((zt[i,:] - zObs[o,:])) - ((zt[i,:] - zObs[o,:])/cp.norm((zt[i,:] - zObs[o,:]))) @ (x[i,:2]-zt[i,:]) <= 0]
 
             problem = cp.Problem(objectNav,constrNav)
             optval = problem.solve(solver=cp.ECOS)
@@ -597,7 +617,7 @@ def main():
             if problem.status == 'infeasible': #if bad information from the environment provokes an infeasible solve, don't crash
                 break
 
-            # diff = np.max(np.abs(u.value - ut)) #if checking convergence independently of cost function
+            #diff = np.linalg.norm(u.value - ut),ord='inf') #if checking convergence independently of cost function
             xt = deepcopy(x.value) #for use in following iteration
             zt = x[:,:2] #ACTIVATE FOR OBSTACLE AVOIDANCE CONSTRAINTS
             ut = deepcopy(u.value) #for use in following iteration
@@ -610,6 +630,8 @@ def main():
             #ax[0,0].scatter(xt[:,0], xt[:,1], s=30, c='blue')
             #ax[0,0].scatter(solver.constants.final_position.value[0], solver.constants.final_position.value[1], s=30, c='red')
             ax[0,0].scatter(xFinal[0], xFinal[1], s=30, c='red')
+            for o in range(obstacles):
+                ax[0,0].scatter(zObs[o,0],zObs[o,1],c='blue')
             ax[0,1].plot(np.arange(NavigatioN), xt[:,3]) #velocity history
             ax[0,2].plot(np.arange(NavigatioN), xt[:,5]) #acceleration history
             ax[1,0].plot(np.arange(NavigatioN), xt[:,2]) #vehicle attitude
