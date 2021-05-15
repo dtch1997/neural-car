@@ -468,7 +468,7 @@ def main():
 
     ##PORTED CODE STARTS HERE (MORE OR LESS)
 	#DEFINITION OF CONSTANTS FOR NAVIGATION
-    NavigatioN = 1200 #number of time steps in a single solve
+    NavigatioN = 800 #number of time steps in a single solve
     #xFinal = np.array([x_extract,y,theta,0,0,0,0]) + np.array([10,10,0,0,0,0,0]) * np.hstack((direction,np.array([0,0,0]))) + np.array([10,10,0,0,0,0,0]) * np.hstack((orth_direction,np.array([0,0,0]))) #coordinates of goal location and characteristics
     #xFinal = np.array([x_extract,y,theta,0,0,0,0]) + np.array([-10,10,0,0,0,0,0])
     xFinal = np.array([x_extract,y,theta,0,0,0,0]) + 30 * np.hstack((direction,np.array([0,0,0]))) + 8 * np.hstack((orth_direction,np.array([0,0,0])))
@@ -476,8 +476,8 @@ def main():
 
     h = 0.02 #50Hz
     # h = 0.04 #25Hz (debug)
-    epsilon = 0.01 #to check convergence of cost function
-    state_epsilon = 0.01 #to check drift from controller trajectory
+    epsilon = 2e-2 #to check convergence of optimizer
+    state_epsilon = 2e-2 #to check drift from controller trajectory
 
     #DECLARATION OF CONTROL LIMITS
     speed_limit = 20
@@ -530,10 +530,10 @@ def main():
         #INITIALIZATION OF LOOP CONTROL VALUES
         diff = np.inf #initialize to unreasonable value to overwrite in loop
 
-        while abs(diff) > epsilon and abs(state_diff) > state_epsilon:
-            #CALCULATION OF OBJECTIVE VALUE WITH PRIOR SOLUTION
-            prevGas = h*np.linalg.norm(ut,'fro')**2 + np.linalg.norm(xFinal - xt[-1,:],1) #objective value with prior trajectory
-            print('prev: ',prevGas)
+        while abs(diff) > epsilon and state_diff > state_epsilon:
+            # #CALCULATION OF OBJECTIVE VALUE WITH PRIOR SOLUTION
+            # prevGas = h*np.linalg.norm(ut,'fro')**2 + np.linalg.norm(xFinal - xt[-1,:],1) #objective value with prior trajectory
+            # print('prev: ',prevGas)
 
             prev_theta = xt[:,2] #history of angles
             prev_veloc = xt[:,3] #history of velocities
@@ -617,11 +617,12 @@ def main():
             if problem.status == 'infeasible': #if bad information from the environment provokes an infeasible solve, don't crash
                 break
 
-            #diff = np.linalg.norm(u.value - ut),ord='inf') #if checking convergence independently of cost function
+            diff = np.max(np.abs(u.value - ut)) #if checking convergence independently of cost function
             xt = deepcopy(x.value) #for use in following iteration
             zt = x[:,:2] #ACTIVATE FOR OBSTACLE AVOIDANCE CONSTRAINTS
             ut = deepcopy(u.value) #for use in following iteration
-            diff = optval - prevGas #for checking convergence via while loop (convergence of cost value)
+            # diff = optval - prevGas #for checking convergence via while loop (convergence of cost value)
+            print('convergence measure: ',diff)
 
 
 
