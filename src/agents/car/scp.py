@@ -34,9 +34,10 @@ class SCPAgent:
 
     # Solver parameters
     solve_frequency: int = 20
+    solve_tol: float = 2 * 1e-2
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
-    max_iters: int = 10
+    max_iters: int = 20
     solver = cp.ECOS
 
     # Obstacle parameters
@@ -75,9 +76,7 @@ class SCPAgent:
 
     @property 
     def num_obstacles(self):
-        if self.obstacle_centers is None:
-            return 0
-        return self.obstacle_centers.shape[0]
+        return self._obstacle_centers.shape[0]
 
     def _setup_cp_problem(self):
         """ Set up the CVXPY problem once following DPP principles. 
@@ -95,7 +94,10 @@ class SCPAgent:
         goal_state = cp.Parameter(shape = (self.num_states,))
         prev_state_trajectory = cp.Parameter((self.num_time_steps_ahead + 1, self.num_states))
         cos_prev_theta = cp.Parameter(self.num_time_steps_ahead + 1)
-        sin_prev_theta = cp.Parameter(self.num_time_steps_ahead + 1)
+        sin_prev_theta = cp.Parameter(self.num_time_steps_ahead + 1) 
+        obstacle_x_displacements = cp.Parameter((self.num_obstacles, self.num_time_steps_ahead+1))
+        obstacle_y_displacements = cp.Parameter((self.num_obstacles, self.num_time_steps_ahead+1))
+        obstacle_distances = cp.Parameter((self.num_obstacles, self.num_time_steps_ahead + 1))
 
         h = self.time_step_duration
         x = new_state_trajectory
@@ -103,8 +105,8 @@ class SCPAgent:
         u = new_input_trajectory
 
         objective = cp.Minimize(
-            self.time_step_duration * cp.sum_squares(u) / self.num_time_steps_ahead
-            + 100 * cp.norm(x[-1,:] - goal_state, p=1)
+            self.time_step_duration * cp.sum_squares(u)
+            + cp.norm(x[-1,:] - goal_state, p=1)
             + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
             + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
             + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
@@ -146,31 +148,27 @@ class SCPAgent:
             nxt(x[:,6]) == curr(x[:,6]) + h * u[:,1], #pinch constraint x[:,6]
         ]
 
+        # Obstacle avoidance constraints
+        rTotal = np.repeat(
+            self._obstacle_radii, 
+            repeats = self.num_time_steps_ahead + 1,
+            axis = -1
+        )
+        xDiffs = x[:,0] - xt[:,0]
+        yDiffs = x[:,1] - xt[:,1]
+        xSub = obstacle_x_displacements
+        ySub = obstacle_y_displacements
+        zSubNorms = obstacle_distances
 
-        # Control limit constraints
-        """
-        constraints += [
-            cp.norm(x[:,3], p=np.inf)  <= self.speed_limit, #max forwards velocity (speed limit)
-            cp.norm(x[:,4], p=np.inf)  <= self.kappa_limit, #maximum curvature
-            cp.norm(x[:,5], p=np.inf) <= self.accel_limit, #max acceleration
-            cp.norm(x[:,6], p=np.inf) <= self.pinch_limit #max pinch
-        ]
-        """
-
-        # Obstacle constraints
-        zObs = self._obstacle_centers 
-        rObs = self._obstacle_radii
-        rTotal = np.repeat(rObs,self.num_time_steps_ahead,axis=1)
-
-        zt = xt[:,:2] #saving only the positional values in the trajectory (for obstacle avoidance)
-        zDiffs = cp.Parameter((self.num_time_steps_ahead,2))
-        zSub = np.transpose(np.repeat(np.expand_dims(zt,axis=2), self.num_obstacles,axis=2),axes=(2,0,1)) \
-            - np.transpose(np.repeat(np.expand_dims(zObs,axis=2),self.num_time_steps_ahead,axis=2),axes=(0,2,1)) #OxNx2 tensor containing differences between each position in the trajectory and obstacle center
-        zSubNorms = np.linalg.norm(zSub,ord=2,axis=(-1))#OxN matrix of Euclidean distances between each position in the trajectory and each obstacle center
-        zDiffs = x[:,:2] - zt #difference between current and prior position trajectory
         
-        for o in range(self.num_obstacles): #because CVXPY can't use 3D tensors for whatever reason
-            constraints += [rTotal[o,:] - zSubNorms[o,:] - cp.sum(cp.multiply(zSub[o,:,:],zDiffs),axis=1)/zSubNorms[o,:] <= 0] #one constraint per obstacle
+        for o in range(self.num_obstacles):
+            constraints += [
+                rTotal[o,:] \
+                - zSubNorms[o,:] \
+                - (cp.multiply(xSub[o,:], xDiffs) + cp.multiply(ySub[o,:], yDiffs)) / zSubNorms[o,:]
+                <= 0
+            ]
+        
 
         # Set up cp.Problem
         problem = cp.Problem(objective, constraints)
@@ -180,7 +178,10 @@ class SCPAgent:
             'goal_state': goal_state,
             'prev_state_trajectory': prev_state_trajectory, 
             'cos_prev_theta_trajectory': cos_prev_theta,
-            'sin_prev_theta_trajectory': sin_prev_theta
+            'sin_prev_theta_trajectory': sin_prev_theta,
+            'obstacle_distances': obstacle_distances,
+            'obstacle_x_displacements': obstacle_x_displacements,
+            'obstacle_y_displacements': obstacle_y_displacements,
         })
         self.variables = AttrDict.from_dict({
             'state_trajectory': new_state_trajectory,
@@ -194,25 +195,33 @@ class SCPAgent:
         self._obstacle_centers = env.obstacle_centers
         self._obstacle_radii = env.obstacle_radii
         self._setup_cp_problem()
+        self._input_trajectory = None 
+        self._state_trajectory = None
         self._prev_input_trajectory = np.zeros((self.num_time_steps_ahead, self.num_actions)) 
         self._prev_state_trajectory = env.rollout_actions(self._current_state, self._prev_input_trajectory)
-        self._time = 0
+        self._steps_since_last_solve = 0
 
-    def get_action(self, current_state):
-        def forward(trajectory: np.ndarray, num_time_steps: int):
-            """ Advance num_time_steps along a trajectory, copying the last value """
-            return np.concatenate([trajectory[num_time_steps:]] + [trajectory[-1][np.newaxis,:]] * num_time_steps)
-        if self._time % self.solve_frequency == 0:
+    def get_action(self, current_state, verbose = False):
+        # TODO: Add drift tracking constraint
+        
+        self._steps_since_last_solve += 1
+        predicted_state = self._prev_state_trajectory[self._steps_since_last_solve]
+
+        if self._input_trajectory is None \
+            or self._steps_since_last_solve == self.solve_frequency:
+            # or np.linalg.norm(predicted_state - current_state) > self.solve_tol \
             self._state_trajectory, self._input_trajectory = self._solve(
                 current_state, 
                 self._goal_state, 
                 self._prev_state_trajectory, 
-                self._prev_input_trajectory
+                self._prev_input_trajectory,
+                verbose
             )
-        self._time += 1
-        return self._input_trajectory[self._time % self.solve_frequency]
+            self._steps_since_last_solve = 0        
+        return self._input_trajectory[self._steps_since_last_solve]                
 
-    def _solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory):
+
+    def _solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory, verbose = False):
         """ Perform one SCP solve to find an optimal trajectory """
         diff = self.convergence_tol + 1
         prev_state_trajectory = initial_state_trajectory
@@ -222,7 +231,7 @@ class SCPAgent:
         for iteration in range(self.max_iters):
             # self._convex_solve is guaranteed to return a copy of state trajectory
             state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory, prev_input_trajectory)
-            if self.verbose: 
+            if verbose: 
                 print(f"SCP iteration {iteration}: status {status}, optval {optval}")
             # diff = np.abs(prev_optval - optval)
             diff = np.abs(prev_optval - optval).max()
@@ -239,6 +248,17 @@ class SCPAgent:
         self.parameters.prev_state_trajectory.value = prev_state_trajectory
         self.parameters.cos_prev_theta_trajectory.value = np.cos(prev_state_trajectory[:,2])
         self.parameters.sin_prev_theta_trajectory.value = np.sin(prev_state_trajectory[:,2])
+
+        zObs = self._obstacle_centers 
+        rObs = self._obstacle_radii
+        zt = prev_state_trajectory[:,:2]
+        zSub = np.transpose(np.repeat(np.expand_dims(zt,axis=2),self.num_obstacles,axis=2),axes=(2,0,1)) \
+            - np.transpose(np.repeat(np.expand_dims(zObs,axis=2), self.num_time_steps_ahead + 1, axis=2),axes=(0,2,1)) #OxNx2 tensor containing differences between each position in the trajectory and obstacle center
+        zSubNorms = np.linalg.norm(zSub,ord=2,axis=(-1)) # O x N matrix of Euclidean distances between each position in the trajectory and each obstacle center
+        
+        self.parameters.obstacle_x_displacements.value = zSub[:,:,0]
+        self.parameters.obstacle_y_displacements.value = zSub[:,:,1]
+        self.parameters.obstacle_distances.value = zSubNorms 
 
         optval = self.problem.solve(solver = self.solver)
         state_trajectory = self.variables.state_trajectory.value

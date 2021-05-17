@@ -76,7 +76,7 @@ class Environment(CarRacing):
         super(Environment, self).reset()
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
-        self._obstacle_centers = obstacle_centers
+        self._obstacle_centers = obstacle_centers + self._current_state[:2]
         self._obstacle_radii = obstacle_radii
 
         # Set up the final state

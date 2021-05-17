@@ -23,7 +23,7 @@ class EvaluationRunner:
         parser.add_argument("--num-simulation-time-steps", type=int, default=1200)
         parser.add_argument("--num-rollouts", type=int, default=5)
         parser.add_argument("--dist-threshold", type=int, default=1)
-        parser.add_argument("--save-filepath", type=str, default = 'trajectory.npz')
+        parser.add_argument("--save-filepath", type=str, default = 'trajectory.npy')
         return parser 
 
     @staticmethod 
@@ -36,20 +36,23 @@ class EvaluationRunner:
         data_len = 0
 
         for i in range(self.num_rollouts):
-            delta_x, delta_y, delta_th = (*np.random.uniform(low = -10, high = 10, size = 2), np.pi * np.random.uniform()-np.pi/2)
+            
+            #relative_goal = np.array([0, 10, 0])
+            #relative_obstacle_centers = np.array([[1, 5]])
+            #obstacle_radii = np.array([[2.0]])
+            
+            delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)
             relative_goal = np.array([delta_x,delta_y,delta_th])
-            obstacle_centers = np.random.uniform(low = -10, high = 10, size = (10, 2))
-            obstacle_radii = np.ones(shape = (10, 1), dtype = np.float32)
+            relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
+            obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
 
-            self.env.reset(relative_goal, obstacle_centers, obstacle_radii) 
+            self.env.reset(relative_goal, relative_obstacle_centers, obstacle_radii) 
             self.agent.reset(self.env)
 
             initial_state = self.env.current_state
             current_state = self.env.current_state
             actual_trajectory[0] = current_state
 
-            print(self.env.current_state)
-            print(self.env.goal_state)
             for j in range(self.num_simulation_time_steps):
                 self.env.render()
                 action = self.agent.get_action(current_state)
@@ -61,12 +64,16 @@ class EvaluationRunner:
                 current_state = next_state
                 actual_trajectory[j+1] = current_state
 
-                diff = current_state[:3] - self.env.goal_state[:3]
-                # TODO: Normalize theta to be between 0 and 2pi when calculating difference
+                diff = self.env.goal_state[:3] - current_state[:3]
+                # Normalize theta to be between -pi and pi when calculating difference
+                while diff[2] > np.pi:
+                    diff[2] -= 2 * np.pi
+                while diff[2] < -np.pi:
+                    diff[2] += 2 * np.pi
+                
                 print(diff)
                 if np.linalg.norm(diff).item() < self.dist_threshold:
                     break
-
 
             plot_trajectory(
                 initial_state = initial_state, 
