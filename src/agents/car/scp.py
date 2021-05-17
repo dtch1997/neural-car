@@ -34,7 +34,7 @@ class SCPAgent:
 
     # Solver parameters
     solve_frequency: int = 20
-    solve_tol: float = 2 * 1e-2
+    solve_tol: float = 1
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
     max_iters: int = 20
@@ -202,14 +202,10 @@ class SCPAgent:
         self._steps_since_last_solve = 0
 
     def get_action(self, current_state, verbose = False):
-        # TODO: Add drift tracking constraint
-        
         self._steps_since_last_solve += 1
-        predicted_state = self._prev_state_trajectory[self._steps_since_last_solve]
-
         if self._input_trajectory is None \
-            or self._steps_since_last_solve == self.solve_frequency:
-            # or np.linalg.norm(predicted_state - current_state) > self.solve_tol \
+            or np.linalg.norm(self._state_trajectory[self._steps_since_last_solve] - current_state) > self.solve_tol:
+            # or self._steps_since_last_solve == self.solve_frequency:
             self._state_trajectory, self._input_trajectory = self._solve(
                 current_state, 
                 self._goal_state, 
