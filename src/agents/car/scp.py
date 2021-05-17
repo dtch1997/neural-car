@@ -34,7 +34,7 @@ class SCPAgent:
 
     # Solver parameters
     solve_frequency: int = 20
-    solve_tol: float = 1
+    solve_tol: float = 1e-1
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
     max_iters: int = 20
@@ -104,16 +104,6 @@ class SCPAgent:
         xt = prev_state_trajectory
         u = new_input_trajectory
 
-        objective = cp.Minimize(
-            self.time_step_duration * cp.sum_squares(u)
-            + cp.norm(x[-1,:] - goal_state, p=1)
-            + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
-            + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
-            + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
-            + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))
-        )
-        assert objective.is_dpp()
-
         constraints = []
         prev_theta = xt[:,2] # previous trajectory of angles
         prev_veloc = xt[:,3] # previous trajectory of velocities
@@ -160,7 +150,7 @@ class SCPAgent:
         ySub = obstacle_y_displacements
         zSubNorms = obstacle_distances
 
-        
+        """
         for o in range(self.num_obstacles):
             constraints += [
                 rTotal[o,:] \
@@ -168,7 +158,37 @@ class SCPAgent:
                 - (cp.multiply(xSub[o,:], xDiffs) + cp.multiply(ySub[o,:], yDiffs)) / zSubNorms[o,:]
                 <= 0
             ]
-        
+        """
+
+        cost = (
+            self.time_step_duration * cp.sum_squares(u)
+            + cp.norm(x[-1,:] - goal_state, p=1)
+            + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
+            + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
+            + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
+            + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))     
+        )
+
+        # Soft constraints on obstacle avoidance
+        # Encourage the solver to have a margin of error in avoiding obstacles
+        for o in range(self.num_obstacles):
+            cost += cp.sum(cp.maximum(
+                rTotal[o,:] \
+                - zSubNorms[o,:] \
+                - (cp.multiply(xSub[o,:], xDiffs) + cp.multiply(ySub[o,:], yDiffs)) / zSubNorms[o,:]
+                + 1,
+                0
+            ))
+
+        objective = cp.Minimize(
+            self.time_step_duration * cp.sum_squares(u)
+            + cp.norm(x[-1,:] - goal_state, p=1)
+            + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
+            + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
+            + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
+            + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))     
+        )
+        assert objective.is_dpp()
 
         # Set up cp.Problem
         problem = cp.Problem(objective, constraints)
@@ -202,15 +222,20 @@ class SCPAgent:
         self._steps_since_last_solve = 0
 
     def get_action(self, current_state, verbose = False):
+        def forward(x, t):
+            x[:-t] = x[t:]
+            x[-t:] = x[-1]  
+            return x
+
         self._steps_since_last_solve += 1
         if self._input_trajectory is None \
-            or np.linalg.norm(self._state_trajectory[self._steps_since_last_solve] - current_state) > self.solve_tol:
-            # or self._steps_since_last_solve == self.solve_frequency:
+            or np.linalg.norm(self._state_trajectory[self._steps_since_last_solve] - current_state) > self.solve_tol \
+            or self._steps_since_last_solve == self.num_time_steps_ahead-1:
             self._state_trajectory, self._input_trajectory = self._solve(
                 current_state, 
                 self._goal_state, 
-                self._prev_state_trajectory, 
-                self._prev_input_trajectory,
+                forward(self._prev_state_trajectory, self._steps_since_last_solve), 
+                forward(self._prev_input_trajectory, self._steps_since_last_solve),
                 verbose
             )
             self._steps_since_last_solve = 0        
@@ -229,6 +254,8 @@ class SCPAgent:
             state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory, prev_input_trajectory)
             if verbose: 
                 print(f"SCP iteration {iteration}: status {status}, optval {optval}")
+            if status == 'infeasible':
+                raise Exception('Underlying convex problem was infeasible')
             # diff = np.abs(prev_optval - optval)
             diff = np.abs(prev_optval - optval).max()
             if diff < self.convergence_tol:
