@@ -19,7 +19,7 @@ class SCPAgent:
 
     # Basic world parameters
     time_step_duration: float = 1 / Env.constants.fps # seconds. For 50 FPS
-    num_time_steps_ahead: int = 200
+    num_time_steps_ahead: int = 1000
 
     # The control problem is reparametrized with different control variables
     state_variable_names: Tuple[str] = Env.state_variable_names
@@ -33,7 +33,6 @@ class SCPAgent:
     pinch_limit = 3 / Env.constants.ell
 
     # Solver parameters
-    solve_frequency: int = 20
     solve_tol: float = 1e-1
     convergence_tol: float = 1e-2
     convergence_metric: str = 'optimal_value' 
@@ -43,7 +42,6 @@ class SCPAgent:
     # Obstacle parameters
     obstacle_radii: np.ndarray = None 
     obstacle_centers: np.ndarray = None
-    using_obstacles: bool = False
 
     # Debug parameters 
     verbose: bool = False
