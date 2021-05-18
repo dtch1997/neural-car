@@ -4,7 +4,7 @@ import numpy as np
 def plot_trajectory(initial_state, goal_state, state_trajectory, filepath: str, 
         obstacle_centers, obstacle_radii):
     fig, ax = plt.subplots(2,3)
-    ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], c='black', label = 'Planned trajectory') #vehicle trajectory
+    ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], s=5, c='black', label = 'Planned trajectory') #vehicle trajectory
     ax[0,0].scatter(goal_state[0], goal_state[1], s=30, c='red', label = 'Goal position')
     ax[0,0].scatter(initial_state[0], initial_state[1], s=30, c='blue', label='Initial position')
     for o in range(obstacle_centers.shape[0]):

@@ -53,6 +53,8 @@ class SCPAgent:
         parser.add_argument('--obstacle-radii', default = None)
         parser.add_argument('--obstacle-centers', default = None)
         parser.add_argument('--num-time-steps-ahead', type = int, default = 200)
+        parser.add_argument('--solve-tol', type=float, default = 1e-1)
+        parser.add_argument('--convergence-tol', type=float, default = 1e-2)
         return parser 
 
     @staticmethod 
@@ -60,7 +62,9 @@ class SCPAgent:
         return SCPAgent(
             obstacle_radii = args.obstacle_radii,
             obstacle_centers = args.obstacle_centers,
-            num_time_steps_ahead = args.num_time_steps_ahead
+            num_time_steps_ahead = args.num_time_steps_ahead,
+            solve_tol = args.solve_tol, 
+            convergence_tol = args.convergence_tol
         )
 
     @property
@@ -172,7 +176,7 @@ class SCPAgent:
         # Soft constraints on obstacle avoidance
         # Encourage the solver to have a margin of error in avoiding obstacles
         for o in range(self.num_obstacles):
-            cost += cp.sum(cp.maximum(
+            cost += 10 * cp.sum(cp.maximum(
                 rTotal[o,:] \
                 - zSubNorms[o,:] \
                 - (cp.multiply(xSub[o,:], xDiffs) + cp.multiply(ySub[o,:], yDiffs)) / zSubNorms[o,:]
