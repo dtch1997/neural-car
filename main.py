@@ -5,11 +5,11 @@ from src.runners import registry as runner_registry
 
 def get_args():
     parser = ArgumentParser()
-    parser.add_argument('--runner', default = 'test', choices = ('train', 'test'), 
+    parser.add_argument('--runner', default = 'test', choices = runner_registry.keys(), 
                         help = "Specify whether to train or test an agent")
-    parser.add_argument('--environment', default = "car", choices = ('car',), 
+    parser.add_argument('--environment', default = "car", choices = environment_registry.keys(), 
                         help = "Environment to train/test agent on")
-    parser.add_argument('--agent', default = 'scp', choices = ('scp', 'nn'),
+    parser.add_argument('--agent', default = 'scp', choices = agent_registry.keys(),
                         help = 'Agent to train/test')
 
     args, _ = parser.parse_known_args()

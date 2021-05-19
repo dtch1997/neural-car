@@ -1,10 +1,11 @@
 import numpy as np
+import h5py
 
 from pathlib import Path
 from src.utils import plot_trajectory
 
 class DataGenerationRunner:
-
+    """ The same as the Eval runner but we don't """
     def __init__(self, args, env, agent):
         self.env = env
         self.agent = agent
@@ -29,73 +30,58 @@ class DataGenerationRunner:
         return DataGenerationRunner(args, env, agent)
 
     def run(self):
-        actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.agent.num_states))
-        data =  np.zeros((self.num_rollouts * self.num_simulation_time_steps, self.agent.num_states+self.agent.num_actions))
-        data_len = 0
+        with h5py.File('simulation_output.hdf5', 'w') as output_file:
+            for i in range(self.num_rollouts):
+                delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)
+                relative_goal = np.array([delta_x,delta_y,delta_th])
+                relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
+                obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
 
-        for i in range(self.num_rollouts):
-            
-            delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)
-            relative_goal = np.array([delta_x,delta_y,delta_th])
-            relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
-            obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
+                self.env.reset(relative_goal, relative_obstacle_centers, obstacle_radii) 
+                self.agent.reset(self.env)
 
-            self.env.reset(relative_goal, relative_obstacle_centers, obstacle_radii) 
-            self.agent.reset(self.env)
+                initial_state = self.env.current_state
+                current_state = self.env.current_state
 
-            initial_state = self.env.current_state
-            current_state = self.env.current_state
-            actual_trajectory[0] = current_state
+                grp = output_file.create_group(f'simulation_{i}')
+                state_trajectory = grp.create_dataset(
+                    f'state_trajectory', 
+                    shape = (self.num_simulation_time_steps + 1, 7), 
+                    dtype = 'f'
+                )
+                input_trajectory = grp.create_dataset(
+                    f'input_trajectory',
+                    shape = (self.num_simulation_time_steps, 2),
+                    dtype = 'f'
+                )
+                grp.attrs['goal_state'] = self.env.goal_state
+                grp.attrs['relative_obstacle_centers'] = relative_obstacle_centers
+                grp.attrs['obstacle_centers'] = self.env.obstacle_centers
+                grp.attrs['obstacle_radii'] = obstacle_radii
 
-            self.log(f'Beginning simulation {i}')
-            for j in range(self.num_simulation_time_steps):
-                try: 
-                    self.env.render()
-                    action = self.agent.get_action(current_state)
-                    
-                    data[data_len] = np.concatenate([
-                        current_state, 
-                        env.relative_goal, 
-                        env.relative_obstacle_centers, 
-                        env.action
-                    ])
-                    data_len += 1
+                state_trajectory[0] = initial_state
 
-                    next_state, reward, done, info = self.env.take_action(action)            
-                    current_state = next_state
-                    actual_trajectory[j+1] = current_state
+                self.log(f'Beginning simulation {i}')
+                for j in range(self.num_simulation_time_steps):
+                    try: 
+                        action = self.agent.get_action(current_state)
+                        next_state, reward, done, info = self.env.take_action(action)            
+                        current_state = next_state
 
-                    diff = self.env.goal_state[:3] - current_state[:3]
-                    # Normalize theta to be between -pi and pi when calculating difference
-                    while diff[2] > np.pi:
-                        diff[2] -= 2 * np.pi
-                    while diff[2] < -np.pi:
-                        diff[2] += 2 * np.pi
-                    
-                    if np.linalg.norm(diff).item() < self.dist_threshold:
-                        break
-                except Exception as e:
-                    self.log(f"Rollout {i} exited with error {e}")
-                    # Plot the planned trajectory
-                    plot_trajectory(
-                        initial_state = current_state, 
-                        goal_state = self.env.goal_state, 
-                        state_trajectory = self.agent._prev_state_trajectory, 
-                        filepath = str(OUTPUT_DIR / f'error_planned_trajectory_{i}.png'), 
-                        obstacle_centers = self.env.obstacle_centers, 
-                        obstacle_radii = self.env.obstacle_radii
-                    )
-                    break
+                        state_trajectory[j+1] = current_state
+                        input_trajectory[j] = action
 
-            plot_trajectory(
-                initial_state = initial_state, 
-                goal_state = self.env.goal_state, 
-                state_trajectory = actual_trajectory[:j], 
-                filepath = str(OUTPUT_DIR / f'actual_trajectory_{i}.png'), 
-                obstacle_centers = self.env.obstacle_centers, 
-                obstacle_radii = self.env.obstacle_radii
-            )
-
-        OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-        np.save(self.get_savepath(), data)
-        return actual_trajectory
+                        diff = self.env.goal_state[:3] - current_state[:3]
+                        # Normalize theta to be between -pi and pi when calculating difference
+                        while diff[2] > np.pi:
+                            diff[2] -= 2 * np.pi
+                        while diff[2] < -np.pi:
+                            diff[2] += 2 * np.pi
+                        
+                        if np.linalg.norm(diff).item() < self.dist_threshold:
+                            break
+                    except Exception as e:
+                        self.log(f"Rollout {i} exited with error {e}")
+                        break          
+                grp.attrs['num_steps'] = j
+            return 
