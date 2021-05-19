@@ -34,9 +34,8 @@ class EvaluationRunner:
         return EvaluationRunner(args, env, agent)
 
     def run(self):
+        OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
         actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.agent.num_states))
-        data =  np.zeros((self.num_rollouts * self.num_simulation_time_steps, self.agent.num_states+self.agent.num_actions))
-        data_len = 0
 
         for i in range(self.num_rollouts):
             
@@ -61,9 +60,6 @@ class EvaluationRunner:
                 try: 
                     self.env.render()
                     action = self.agent.get_action(current_state)
-                    
-                    data[data_len] = np.concatenate([current_state, action])
-                    data_len += 1
 
                     next_state, reward, done, info = self.env.take_action(action)            
                     current_state = next_state
@@ -99,7 +95,4 @@ class EvaluationRunner:
                 obstacle_centers = self.env.obstacle_centers, 
                 obstacle_radii = self.env.obstacle_radii
             )
-
-        OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-        np.save(self.get_savepath(), data)
         return actual_trajectory
