@@ -13,6 +13,7 @@ class DataGenerationRunner:
         self.save_filepath = args.save_filepath
         self.num_rollouts = args.num_rollouts
         self.dist_threshold = args.dist_threshold
+        self.world_seed = args.world_seed
 
     @staticmethod 
     def add_argparse_args(parser):
@@ -20,6 +21,7 @@ class DataGenerationRunner:
         parser.add_argument("--num-rollouts", type=int, default=5)
         parser.add_argument("--dist-threshold", type=int, default=1)
         parser.add_argument("--save-filepath", type=str, default = 'trajectory.npy')
+        parser.add_argument("--world-seed", type=int, default=None)
         return parser 
 
     def log(self, message: str):
@@ -30,6 +32,7 @@ class DataGenerationRunner:
         return DataGenerationRunner(args, env, agent)
 
     def run(self):
+        np.random.seed(self.world_seed)
         with h5py.File('simulation_output.hdf5', 'w') as output_file:
             for i in range(self.num_rollouts):
                 delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)

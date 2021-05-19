@@ -1,28 +1,36 @@
-import torch
 import numpy as np
-import pytorch_lightning as pl
+import h5py
 
+import torch
+import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader, random_split
 
 class CarDataset(Dataset):
     def __init__(self, data_filepath, transform=None, target_transform=None):
-        data = np.load(open(data_filepath), delimiter=",")
-        self.state_data = data[:,:-3]
-        self.action_data = data[:,-3:]
-        self.transform = transform
-        self.target_transform = target_transform
+        self.dataset = h5py.File(data_filepath, 'r')['simulation_0']
 
     def __len__(self):
-        return self.state_data.shape[0]
+        return self.dataset.attrs['num_steps']
 
     def __getitem__(self, idx):
-        state = torch.from_numpy(self.state_data[idx,:])
-        action = torch.from_numpy(self.action_data[idx,:])
+        current_state = torch.from_numpy(self.dataset['state_trajectory'][idx,:].astype(np.float32))
+        action = torch.from_numpy(self.dataset['input_trajectory'][idx,:].astype(np.float32))
+        goal_state = torch.from_numpy(self.dataset.attrs['goal_state'].astype(np.float32))
+        obstacle_centers = torch.from_numpy(self.dataset.attrs['obstacle_centers'].astype(np.float32))
+        obstacle_radii = torch.from_numpy(self.dataset.attrs['obstacle_radii'].astype(np.float32))
+        """
         if self.transform:
             state = self.transform(state)
         if self.target_transform:
             action = self.target_transform(action)
-        sample = {"state": state, "action": action}
+        """
+        sample = {
+            "state": current_state, 
+            "action": action,
+            "relative_goal": current_state[:3] - goal_state[:3],
+            "obstacle_centers": obstacle_centers - current_state[:2],
+            "obstacle_radii": obstacle_radii, 
+        }
         return sample
 
 class CarDataModule(pl.LightningDataModule):
@@ -50,7 +58,8 @@ class CarDataModule(pl.LightningDataModule):
     def setup(self):
         train_len = int(self.train_fraction * len(self.dataset))
         val_len = len(self.dataset) - train_len
-        self.train_dataset, self.val_dataset = random_split(self.dataset, train_len, val_len, 
+        self.train_dataset, self.val_dataset = random_split(self.dataset, 
+            lengths = (train_len, val_len), 
             generator = torch.Generator().manual_seed(self.data_seed))
 
     def train_dataloader(self):
@@ -67,13 +76,22 @@ class CarDataModule(pl.LightningDataModule):
 
 class MSERegression(pl.LightningModule):
     """ A pl.Lightning module for training a module to minimize MSE loss between source and target """
-    def __init__(self, args, agent: 'NeuralNetAgent'):
+    def __init__(self, args = None, agent: 'NeuralNetAgent' = None):
         super().__init__()
         self.agent = agent
 
     @staticmethod 
     def add_argparse_args(parser):
         return parser
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.agent.forward(x)
+
+    def reset(self, env):
+        self.agent.reset(env)
+
+    def get_action(self, state: np.ndarray) -> np.ndarray:
+        return self.agent.get_action(state)
 
     @staticmethod
     def from_argparse_args(args, agent):
@@ -84,9 +102,14 @@ class MSERegression(pl.LightningModule):
     
     def shared_step(self, batch, batch_idx):
         """ The common parts of train_step and validation_step """
-        state = batch['state']
+        inputs = {
+            'state': batch['state'],
+            'relative_goal': batch['relative_goal'],
+            'obstacle_centers': batch['obstacle_centers'],
+            'obstacle_radii': batch['obstacle_radii']
+        }
         action = batch['action']
-        action_pred = self.agent(state)
+        action_pred = self.agent(inputs)
         # Compute MSE loss, averaging over samples
         loss = torch.nn.functional.mse_loss(action_pred, action, reduction = 'mean')
         return {'loss': loss}
