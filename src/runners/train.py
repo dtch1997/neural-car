@@ -18,17 +18,12 @@ class CarDataset(Dataset):
         goal_state = torch.from_numpy(self.dataset.attrs['goal_state'].astype(np.float32))
         obstacle_centers = torch.from_numpy(self.dataset.attrs['obstacle_centers'].astype(np.float32))
         obstacle_radii = torch.from_numpy(self.dataset.attrs['obstacle_radii'].astype(np.float32))
-        """
-        if self.transform:
-            state = self.transform(state)
-        if self.target_transform:
-            action = self.target_transform(action)
-        """
+
         sample = {
             "state": current_state, 
             "action": action,
             "relative_goal": current_state[:3] - goal_state[:3],
-            "obstacle_centers": obstacle_centers - current_state[:2],
+            "obstacle_centers": current_state[:2] - obstacle_centers,
             "obstacle_radii": obstacle_radii, 
         }
         return sample
@@ -43,7 +38,7 @@ class CarDataModule(pl.LightningDataModule):
     @staticmethod 
     def add_argparse_args(parser):
         parser.add_argument('--data-filepath', default = None)
-        parser.add_argument('--batch-size', type = int, default = 32)
+        parser.add_argument('--batch-size', type = int, default = 8)
         parser.add_argument('--train-fraction', type = float,  default = 0.8)
         parser.add_argument('--data-seed', type = int, default = 0)
         return parser 
@@ -111,17 +106,23 @@ class MSERegression(pl.LightningModule):
         action = batch['action']
         action_pred = self.agent(inputs)
         # Compute MSE loss, averaging over samples
-        loss = torch.nn.functional.mse_loss(action_pred, action, reduction = 'mean')
-        return {'loss': loss}
+        loss = torch.nn.functional.l1_loss(action_pred, action, reduction = 'mean')
+        # Compute relative deviation 
+        
+        avg_relative_deviation = (torch.abs(action_pred - action) / action).mean()
+
+        return {'loss': loss, 'relative_deviation': avg_relative_deviation}
 
     def training_step(self, batch, batch_idx):
         output = self.shared_step(batch, batch_idx)
         self.log('train_loss', output['loss'])
+        self.log('train_deviation', output['relative_deviation'])
         return output
         
     def validation_step(self, batch, batch_idx):
         output = self.shared_step(batch, batch_idx)
         self.log('val_loss', output['loss'])
+        self.log('val_deviation', output['relative_deviation'])
         return output
 
 class TrainingRunner:

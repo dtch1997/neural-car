@@ -51,8 +51,19 @@ class NeuralNetAgent(torch.nn.Module):
         return action
 
     def reset(self, env):
-        pass
+        self.goal_state = env.goal_state
+        self.obstacle_centers = env.obstacle_centers
+        self.obstacle_radii = env.obstacle_radii
 
     def get_action(self, state: np.ndarray) -> np.ndarray:
-        state_tensor = torch.from_numpy(state.astype(np.float32))
-        return self(state_tensor).detach().clone().numpy()
+
+        relative_goal = state[:3] - self.goal_state[:3]
+        relative_obstacle_centers = state[:2] - self.obstacle_centers 
+
+        inputs = {
+            'state': torch.from_numpy(state.astype(np.float32)),
+            'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)),
+            'obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)), 
+            'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32))
+        } 
+        return self(inputs).detach().clone().numpy()
