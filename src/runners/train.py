@@ -108,9 +108,7 @@ class MSERegression(pl.LightningModule):
         # Compute MSE loss, averaging over samples
         loss = torch.nn.functional.l1_loss(action_pred, action, reduction = 'mean')
         # Compute relative deviation 
-        
         avg_relative_deviation = (torch.abs(action_pred - action) / action).mean()
-
         return {'loss': loss, 'relative_deviation': avg_relative_deviation}
 
     def training_step(self, batch, batch_idx):
