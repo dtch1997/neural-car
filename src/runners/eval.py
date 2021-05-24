@@ -40,10 +40,9 @@ class EvaluationRunner:
     def from_argparse_args(args, env, agent):
         return EvaluationRunner(args, env, agent)
 
-    def run_parameterized(self, plot_or_not):
-        if (plot_or_not): 
-            OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-            actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.env.num_states()))
+    def run(self):
+        OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+        actual_trajectory = np.zeros((self.num_simulation_time_steps + 1, self.env.num_states()))
 
         np.random.seed(self.world_seed)
         for i in range(self.num_rollouts):
@@ -53,22 +52,20 @@ class EvaluationRunner:
             relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
             obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
 
-            self.env.reset(relative_goal, relative_obstacle_centers, obstacle_radii, disable_view=(not plot_or_not)) 
+            self.env.reset(relative_goal, relative_obstacle_centers, obstacle_radii) 
             self.agent.reset(self.env)
 
             initial_state = self.env.current_state
             current_state = self.env.current_state
-            if (plot_or_not): actual_trajectory[0] = current_state
+            actual_trajectory[0] = current_state
 
             self.log(f'Beginning simulation {i}')
             for j in range(self.num_simulation_time_steps):
+                self.env.render()
                 action = self.agent.get_action(current_state)
-
                 next_state, reward, done, info = self.env.take_action(action)            
                 current_state = next_state
-                if (plot_or_not): 
-                    self.env.render()
-                    actual_trajectory[j+1] = current_state
+                actual_trajectory[j+1] = current_state
 
                 diff = self.env.goal_state[:3] - current_state[:3]
                 # Normalize theta to be between -pi and pi when calculating difference
@@ -79,18 +76,14 @@ class EvaluationRunner:
                 
                 if np.linalg.norm(diff).item() < self.dist_threshold:
                     break
-            if (plot_or_not):
-                plot_trajectory(
-                    initial_state = initial_state, 
-                    goal_state = self.env.goal_state, 
-                    state_trajectory = actual_trajectory[:j], 
-                    filepath = str(OUTPUT_DIR / f'actual_trajectory_{i}.png'), 
-                    obstacle_centers = self.env.obstacle_centers, 
-                    obstacle_radii = self.env.obstacle_radii
-                )
-        if (plot_or_not): return actual_trajectory
-        
 
-    def run(self):
-        self.run_parameterized(plot_or_not=True)
+            plot_trajectory(
+                initial_state = initial_state, 
+                goal_state = self.env.goal_state, 
+                state_trajectory = actual_trajectory[:j], 
+                filepath = str(OUTPUT_DIR / f'actual_trajectory_{i}.png'), 
+                obstacle_centers = self.env.obstacle_centers, 
+                obstacle_radii = self.env.obstacle_radii
+            )
+        return actual_trajectory
         
