@@ -8,7 +8,8 @@ conda create -n neural-car python=3.8
 conda activate neural-car
 
 conda install pytorch cudatoolkit=10.2 -c pytorch
-python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas pytorch-lightning
+conda install -c anaconda swig
+python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas pytorch-lightning h5py
 ```
 
 Generate training data, train NN agent, and evaluate NN agent: 
