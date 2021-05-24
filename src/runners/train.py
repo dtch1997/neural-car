@@ -136,8 +136,8 @@ class TrainingRunner:
 
     @staticmethod 
     def add_argparse_args(parser):
-        parser.add_argument('--learning-rate', default = None)
-        parser.add_argument('--epochs', default = None)
+        parser.add_argument('--learning-rate', default = 0.01)
+        parser.add_argument('--epochs', default = 1000)
         parser = MSERegression.add_argparse_args(parser)
         parser = CarDataModule.add_argparse_args(parser)
         return parser 
