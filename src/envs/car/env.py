@@ -5,6 +5,7 @@ from .dynamics import SIZE
 from src.utils import AttrDict, rotate_by_angle
 from typing import *
 
+
 class Environment(CarRacing):
     """ A wrapper around the CarRacing environment 
     
@@ -72,8 +73,21 @@ class Environment(CarRacing):
     def obstacle_radii(self):
         return self._obstacle_radii.copy()
 
-    def reset(self, relative_goal, obstacle_centers = None, obstacle_radii = None):
+    def disable_view_window(self):
+        from gym.envs.classic_control import rendering
+        org_constructor = rendering.Viewer.__init__
+    
+        def constructor(self, *args, **kwargs):
+            org_constructor(self, *args, **kwargs)
+            self.window.set_visible(visible=False)
+    
+        rendering.Viewer.__init__ = constructor
+
+    def reset(self, relative_goal, obstacle_centers = None, obstacle_radii = None, disable_view=False):
+        if disable_view:
+            self.disable_view_window() 
         super(Environment, self).reset()
+
         # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
         self._obstacle_centers = obstacle_centers + self._current_state[:2]
