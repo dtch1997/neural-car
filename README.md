@@ -8,7 +8,7 @@ conda create -n neural-car python=3.8
 conda activate neural-car
 
 conda install pytorch cudatoolkit=10.2 -c pytorch
-python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas
+python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas pytorch-lightning
 ```
 
 Evaluate neural net agent: 
