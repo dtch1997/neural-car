@@ -23,7 +23,7 @@ class CarDataset(Dataset):
             "state": current_state, 
             "action": action,
             "relative_goal": current_state[:3] - goal_state[:3],
-            "obstacle_centers": current_state[:2] - obstacle_centers,
+            "relative_obstacle_centers": current_state[:2] - obstacle_centers,
             "obstacle_radii": obstacle_radii, 
         }
         return sample
@@ -100,7 +100,7 @@ class MSERegression(pl.LightningModule):
         inputs = {
             'state': batch['state'],
             'relative_goal': batch['relative_goal'],
-            'obstacle_centers': batch['obstacle_centers'],
+            'relative_obstacle_centers': batch['relative_obstacle_centers'],
             'obstacle_radii': batch['obstacle_radii']
         }
         action = batch['action']

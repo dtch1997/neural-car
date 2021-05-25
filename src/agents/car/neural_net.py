@@ -41,7 +41,7 @@ class NeuralNetAgent(torch.nn.Module):
         state_embedding = self.state_adapter(sample['state'])
         goal_embedding = self.relative_goal_adapter(sample['relative_goal'])
         # Mean across the num_obstacles dimension
-        obstacle_center_embedding = self.obstacle_center_adapter(sample['obstacle_centers']).mean(axis=-2)
+        obstacle_center_embedding = self.obstacle_center_adapter(sample['relative_obstacle_centers']).mean(axis=-2)
         obstacle_radii_embedding = self.obstacle_radius_adapter(sample['obstacle_radii']).mean(axis=-2)
         embeddings = state_embedding + goal_embedding + obstacle_center_embedding + obstacle_radii_embedding 
         embeddings = F.relu(embeddings)
@@ -63,7 +63,7 @@ class NeuralNetAgent(torch.nn.Module):
         inputs = {
             'state': torch.from_numpy(state.astype(np.float32)),
             'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)),
-            'obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)), 
+            'relative_obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)), 
             'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32))
         } 
         return self(inputs).detach().clone().numpy()
