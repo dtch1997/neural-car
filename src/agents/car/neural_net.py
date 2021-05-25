@@ -44,7 +44,6 @@ class NeuralNetAgent(torch.nn.Module):
         obstacle_center_embedding = self.obstacle_center_adapter(sample['relative_obstacle_centers']).mean(axis=-2)
         obstacle_radii_embedding = self.obstacle_radius_adapter(sample['obstacle_radii']).mean(axis=-2)
         embeddings = state_embedding + goal_embedding + obstacle_center_embedding + obstacle_radii_embedding 
-        embeddings = F.relu(embeddings)
         hidden_out_1 = F.relu(self.hidden_1(embeddings))
         action = self.hidden_2(hidden_out_1)
         
@@ -61,9 +60,9 @@ class NeuralNetAgent(torch.nn.Module):
         relative_obstacle_centers = state[:2] - self.obstacle_centers 
 
         inputs = {
-            'state': torch.from_numpy(state.astype(np.float32)),
-            'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)),
-            'relative_obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)), 
-            'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32))
+            'state': torch.from_numpy(state.astype(np.float32)).view(1,-1),
+            'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)).view(1,-1),
+            'relative_obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)).view(1,-1), 
+            'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32)).view(1,-1)
         } 
         return self(inputs).detach().clone().numpy()
