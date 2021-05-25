@@ -20,6 +20,7 @@ class CarDataset(Dataset):
         obstacle_radii = torch.from_numpy(self.dataset.attrs['obstacle_radii'].astype(np.float32))
 
         sample = {
+            "trunc_state": current_state[3:],
             "state": current_state, 
             "action": action,
             "relative_goal": current_state[:3] - goal_state[:3],
@@ -98,6 +99,7 @@ class MSERegression(pl.LightningModule):
     def shared_step(self, batch, batch_idx):
         """ The common parts of train_step and validation_step """
         inputs = {
+            'trunc_state': batch['trunc_state'],
             'state': batch['state'],
             'relative_goal': batch['relative_goal'],
             'obstacle_centers': batch['obstacle_centers'],
