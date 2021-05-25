@@ -19,3 +19,8 @@ python main.py --runner train --agent nn --data-filepath simulation_output.hdf5
 # check your lightning_logs dir to find the exact checkpoint to load
 python main.py --runner test --agent nn --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --world-seed 0
 ```
+
+Visualize training statistics with Tensorboard: 
+```
+tensorboard --logdir lightning_logs
+```
