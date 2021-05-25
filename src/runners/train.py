@@ -30,6 +30,7 @@ class CarDataset(Dataset):
 
 class CarDataModule(pl.LightningDataModule):
     def __init__(self, args):
+        super().__init__()
         self.data_filepath = args.data_filepath
         self.train_fraction = args.train_fraction
         self.data_seed = args.data_seed
