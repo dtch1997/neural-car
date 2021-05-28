@@ -20,6 +20,7 @@ class CarDataset(Dataset):
         obstacle_radii = torch.from_numpy(self.dataset.attrs['obstacle_radii'].astype(np.float32))
 
         sample = {
+            "trunc_state": current_state[3:],
             "state": current_state, 
             "action": action,
             "relative_goal": current_state[:3] - goal_state[:3],
@@ -99,6 +100,7 @@ class MSERegression(pl.LightningModule):
     def shared_step(self, batch, batch_idx):
         """ The common parts of train_step and validation_step """
         inputs = {
+            'trunc_state': batch['trunc_state'],
             'state': batch['state'],
             'relative_goal': batch['relative_goal'],
             'relative_obstacle_centers': batch['relative_obstacle_centers'],
@@ -107,7 +109,7 @@ class MSERegression(pl.LightningModule):
         action = batch['action']
         action_pred = self.agent(inputs)
         # Compute MSE loss, averaging over samples
-        loss = torch.nn.functional.l1_loss(action_pred, action, reduction = 'mean')
+        loss = torch.nn.functional.mse_loss(action_pred, action, reduction = 'mean')
         # Compute relative deviation 
         avg_relative_deviation = (torch.abs(action_pred - action) / action).mean()
         return {'loss': loss, 'relative_deviation': avg_relative_deviation}
@@ -133,7 +135,7 @@ class TrainingRunner:
 
         self.data_module = CarDataModule.from_argparse_args(args)
         self.model = MSERegression.from_argparse_args(args, agent)
-        self.trainer = pl.Trainer()
+        self.trainer = pl.Trainer(auto_lr_find=True)
 
     @staticmethod 
     def add_argparse_args(parser):
