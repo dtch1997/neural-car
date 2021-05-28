@@ -21,7 +21,8 @@ class NeuralNetAgent(torch.nn.Module):
         self.obstacle_radius_adapter = torch.nn.Linear(1, hidden_dim)
 
         self.hidden_1 = torch.nn.Linear(hidden_dim*2, hidden_dim)
-        self.hidden_2 = torch.nn.Linear(hidden_dim, action_dim)
+        self.hidden_2 = torch.nn.Linear(hidden_dim, hidden_dim)
+        self.hidden_3 = torch.nn.Linear(hidden_dim, action_dim)
 
     @staticmethod 
     def add_argparse_args(parser):
@@ -39,22 +40,13 @@ class NeuralNetAgent(torch.nn.Module):
         )
 
     def forward(self, sample: Dict[str, torch.Tensor]) -> torch.Tensor:
-        # state_embedding = self.state_adapter(sample['state'])
         state_embedding_trunc = self.state_trunc_adapter(sample['trunc_state']) #modified to no longer include x,y,theta
         goal_embedding = self.relative_goal_adapter(sample['relative_goal'])
-        # Mean across the num_obstacles dimension
-        # obstacle_center_embedding = self.obstacle_center_adapter(sample['obstacle_centers']).mean(axis=-2)
-        # obstacle_radii_embedding = self.obstacle_radius_adapter(sample['obstacle_radii']).mean(axis=-2)
-        # embeddings = state_embedding + goal_embedding + obstacle_center_embedding + obstacle_radii_embedding 
-        # embeddings = state_embedding_trunc + goal_embedding
-        # print(goal_embedding.shape)
-        print(torch.atleast_2d(state_embedding_trunc).shape)
-        embeddings = torch.cat((torch.atleast_2d(state_embedding_trunc),torch.atleast_2d(goal_embedding)),dim=1)
-        print(embeddings.shape)
+        embeddings = torch.cat((state_embedding_trunc,goal_embedding),dim=-1)
         embeddings = F.relu(embeddings)
-        print(embeddings.shape)
         hidden_out_1 = F.relu(self.hidden_1(embeddings))
-        action = self.hidden_2(hidden_out_1)
+        hidden_out_2 = F.relu(self.hidden_2(hidden_out_1))
+        action = self.hidden_3(hidden_out_2)
         
         return action
 

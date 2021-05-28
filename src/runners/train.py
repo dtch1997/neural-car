@@ -31,6 +31,7 @@ class CarDataset(Dataset):
 
 class CarDataModule(pl.LightningDataModule):
     def __init__(self, args):
+        super().__init__()
         self.data_filepath = args.data_filepath
         self.train_fraction = args.train_fraction
         self.data_seed = args.data_seed
@@ -108,7 +109,7 @@ class MSERegression(pl.LightningModule):
         action = batch['action']
         action_pred = self.agent(inputs)
         # Compute MSE loss, averaging over samples
-        loss = torch.nn.functional.l1_loss(action_pred, action, reduction = 'mean')
+        loss = torch.nn.functional.mse_loss(action_pred, action, reduction = 'mean')
         # Compute relative deviation 
         avg_relative_deviation = (torch.abs(action_pred - action) / action).mean()
         return {'loss': loss, 'relative_deviation': avg_relative_deviation}
@@ -134,7 +135,7 @@ class TrainingRunner:
 
         self.data_module = CarDataModule.from_argparse_args(args)
         self.model = MSERegression.from_argparse_args(args, agent)
-        self.trainer = pl.Trainer()
+        self.trainer = pl.Trainer(auto_lr_find=True)
 
     @staticmethod 
     def add_argparse_args(parser):
