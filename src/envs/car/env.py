@@ -83,21 +83,27 @@ class Environment(CarRacing):
     
         rendering.Viewer.__init__ = constructor
 
-    def reset(self, relative_goal, obstacle_centers = None, obstacle_radii = None, disable_view=False):
+    def reset(self, disable_view=False):
         if disable_view:
             self.disable_view_window() 
         super(Environment, self).reset()
-
-        # When resetting, the acceleration and pinch are always zero
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
-        self._obstacle_centers = obstacle_centers + self._current_state[:2]
-        self._obstacle_radii = obstacle_radii
 
+    def update_goal(self, relative_goal):
         # Set up the final state
+        self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
         initial_state = self.current_state
         x, y = initial_state[0], initial_state[1]
         theta = initial_state[2]
+        r, phi, delta_th = relative_goal
+        delta_x, delta_y = (r*np.cos(phi+np.pi/2),r*np.sin(phi+np.pi/2))
+        relative_goal = np.array([delta_x, delta_y, delta_th])
+        
         self._goal_state = np.concatenate([np.array([x, y, theta]) + relative_goal, np.array([0, 0, 0, 0])])
+
+    def update_obstacles(self, obstacle_centers = None, obstacle_radii = None):
+        self._obstacle_centers = obstacle_centers + self._current_state[:2]
+        self._obstacle_radii = obstacle_radii
 
     def get_next_state(self, state, action):
         """ Simulate one step of nonlinear dynamics """

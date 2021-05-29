@@ -43,9 +43,9 @@ class NeuralNetAgent(torch.nn.Module):
         state_embedding_trunc = self.state_trunc_adapter(sample['trunc_state']) #modified to no longer include x,y,theta
         goal_embedding = self.relative_goal_adapter(sample['relative_goal'])
         embeddings = torch.cat((state_embedding_trunc,goal_embedding),dim=-1)
-        embeddings = F.relu(embeddings)
-        hidden_out_1 = F.relu(self.hidden_1(embeddings))
-        hidden_out_2 = F.relu(self.hidden_2(hidden_out_1))
+        embeddings = torch.tanh(embeddings)
+        hidden_out_1 = torch.tanh(self.hidden_1(embeddings))
+        hidden_out_2 = torch.tanh(self.hidden_2(hidden_out_1))
         action = self.hidden_3(hidden_out_2)
 
         return action
