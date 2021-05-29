@@ -4,6 +4,7 @@ import numpy as np
 def plot_trajectory(initial_state, goal_states, state_trajectory, partial_trajectory_list,
                     filepath: str, obstacle_centers, obstacle_radii, plot_obstacles=True):
     
+    goal_states = np.atleast_2d(goal_states)
     fig, ax = plt.subplots(2,3)
     ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], s=5, c='black', label = 'Planned trajectory') #vehicle trajectory
     
