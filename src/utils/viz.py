@@ -2,16 +2,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def plot_trajectory(initial_state, goal_states, state_trajectory, partial_trajectory_list,
-                    filepath: str, obstacle_centers, obstacle_radii):
+                    filepath: str, obstacle_centers, obstacle_radii, plot_obstacles=True):
     
     fig, ax = plt.subplots(2,3)
     ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], s=5, c='black', label = 'Planned trajectory') #vehicle trajectory
     
     ax[0,0].scatter(initial_state[0], initial_state[1], s=30, c='blue', label='Initial position')
     
-    for o in range(obstacle_centers.shape[0]):
-        circle = plt.Circle((obstacle_centers[o,:]), obstacle_radii[o], color = 'green')
-        ax[0,0].add_patch(circle)
+    if plot_obstacles:
+        for o in range(obstacle_centers.shape[0]):
+            circle = plt.Circle((obstacle_centers[o,:]), obstacle_radii[o], color = 'green')
+            ax[0,0].add_patch(circle)
     
     #ax[0,0].scatter(obstacle_centers[:,0], obstacle_centers[:,1], s = obstacle_radii.reshape(-1) * 10, c='green', label = 'Obstacles')
     ax[0,0].set_title("Position trajectory")

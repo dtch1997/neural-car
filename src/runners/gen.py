@@ -56,8 +56,8 @@ class DataGenerationRunner(EvaluationRunner):
                     relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
                     obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
                     
-                    self.env.update_goal(self, relative_goal)
-                    self.env.update_obstacles(self, relative_obstacle_centers, obstacle_radii)
+                    self.env.update_goal(relative_goal)
+                    self.env.update_obstacles(relative_obstacle_centers, obstacle_radii)
                     
                     self.agent.reset(self.env)
 

@@ -125,7 +125,8 @@ class EvaluationRunner:
                 partial_trajectory_list = partial_trajectory_list,
                 filepath = str(OUTPUT_DIR / f'actual_trajectory_{i}.png'), 
                 obstacle_centers = obstacle_centers, 
-                obstacle_radii = obstacle_radiis
+                obstacle_radii = obstacle_radiis,
+                plot_obstacles = False
             )
         return actual_trajectory
         
