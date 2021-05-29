@@ -10,14 +10,23 @@ class CarDataset(Dataset):
         self.dataset = h5py.File(data_filepath, 'r')['simulation_0']
 
     def __len__(self):
-        return self.dataset.attrs['num_steps']
+        return self.dataset.attrs['num_total_steps']
 
     def __getitem__(self, idx):
-        current_state = torch.from_numpy(self.dataset['state_trajectory'][idx,:].astype(np.float32))
-        action = torch.from_numpy(self.dataset['input_trajectory'][idx,:].astype(np.float32))
-        goal_state = torch.from_numpy(self.dataset.attrs['goal_state'].astype(np.float32))
-        obstacle_centers = torch.from_numpy(self.dataset.attrs['obstacle_centers'].astype(np.float32))
-        obstacle_radii = torch.from_numpy(self.dataset.attrs['obstacle_radii'].astype(np.float32))
+        goal = 0
+        for current_goal, end_marker in enumerate(self.dataset.attrs['end_markers']):
+            if end_marker >= idx:
+                goal = current_goal
+                break
+        start_marker = self.dataset.attrs['end_markers'][goal]
+        traj_time = idx-start_marker
+        
+        sub_data = self.dataset[f'goal_{goal}']
+        current_state = torch.from_numpy(sub_data['state_trajectory'][traj_time,:].astype(np.float32))
+        action = torch.from_numpy(sub_data['input_trajectory'][traj_time,:].astype(np.float32))
+        goal_state = torch.from_numpy(sub_data.attrs['goal_state'].astype(np.float32))
+        obstacle_centers = torch.from_numpy(sub_data.attrs['obstacle_centers'].astype(np.float32))
+        obstacle_radii = torch.from_numpy(sub_data.attrs['obstacle_radii'].astype(np.float32))
 
         sample = {
             "trunc_state": current_state[3:],
