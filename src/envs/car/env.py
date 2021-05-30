@@ -90,19 +90,17 @@ class Environment(CarRacing):
         self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
 
     def update_goal(self, relative_goal):
+        """ 
+        Input: relative goal in polar coordinates
+s       """
         # Set up the final state
-        self._current_state = np.concatenate([self._get_env_vars(), np.zeros(2)])
         initial_state = self.current_state
         x, y = initial_state[0], initial_state[1]
         theta = initial_state[2]
-        r, phi, delta_th = relative_goal
-        delta_x, delta_y = (r*np.cos(phi+np.pi/2),r*np.sin(phi+np.pi/2))
-        relative_goal = np.array([delta_x, delta_y, delta_th])
-        
         self._goal_state = np.concatenate([np.array([x, y, theta]) + relative_goal, np.array([0, 0, 0, 0])])
 
-    def update_obstacles(self, obstacle_centers = None, obstacle_radii = None):
-        self._obstacle_centers = obstacle_centers + self._current_state[:2]
+    def update_obstacles(self, relative_obstacle_centers = None, obstacle_radii = None):
+        self._obstacle_centers = relative_obstacle_centers + self.current_state[:2]
         self._obstacle_radii = obstacle_radii
 
     def get_next_state(self, state, action):

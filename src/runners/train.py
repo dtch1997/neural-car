@@ -31,7 +31,7 @@ class CarDataset(Dataset):
 
         sample = {
             "trunc_state": current_state[3:],
-            "state": current_state, 
+            "state": current_state,  
             "action": action,
             "relative_goal": current_state[:3] - goal_state[:3],
             "relative_obstacle_centers": current_state[:2] - obstacle_centers,

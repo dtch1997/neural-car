@@ -1,22 +1,28 @@
 import numpy as np
 import h5py
+
+from pathlib import Path
 from .eval import EvaluationRunner
 
 class DataGenerationRunner(EvaluationRunner):
+
 
 
     @staticmethod 
     def from_argparse_args(args, env, agent):
         return DataGenerationRunner(args, env, agent)
 
+    @property 
+    def save_dir(self) -> Path:
+        return Path('datasets')
+
     def run(self):
         np.random.seed(self.world_seed)
-        with h5py.File('simulation_output.hdf5', 'w') as output_file:
+        save_path = str(self.save_dir / 'simulation_output.hdf5')
+        self.save_dir.mkdir(exist_ok = True, parents = True)
+        print(f"Saving to {save_path}")
+        with h5py.File(save_path, 'w') as output_file:
             for i in range(self.num_rollouts):
-                #delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)
-                #relative_goal = np.array([delta_x,delta_y,delta_th])
-                #relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
-                #obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
 
                 # Reset environment. Done once per rollout
                 self.env.reset(disable_view=True) 
@@ -46,23 +52,13 @@ class DataGenerationRunner(EvaluationRunner):
                     current_state = self.env.current_state 
                     state_trajectory[0] = current_state
 
-                    if not self.rearward_goals:
-                        r, phi, delta_th = (30 * np.random.uniform(), np.pi * np.random.uniform()-np.pi/2, np.pi * np.random.uniform()-np.pi/2)
-                    else:
-                        r, phi, delta_th = (30 * np.random.uniform(), 2*np.pi * np.random.uniform()-np.pi, np.pi * np.random.uniform()-np.pi/2)
-    
-                    relative_goal = np.array([r, phi, delta_th])
-                    relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
-                    obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
-                    
-                    self.env.update_goal(relative_goal)
-                    self.env.update_obstacles(relative_obstacle_centers, obstacle_radii)
+                    self.env.update_goal(self._generate_goal())
+                    self.env.update_obstacles(*self._generate_obstacles())
                     self.agent.reset(self.env)
 
                     sub_grp.attrs['goal_state'] = self.env.goal_state
-                    sub_grp.attrs['relative_obstacle_centers'] = relative_obstacle_centers
                     sub_grp.attrs['obstacle_centers'] = self.env.obstacle_centers
-                    sub_grp.attrs['obstacle_radii'] = obstacle_radii
+                    sub_grp.attrs['obstacle_radii'] = self.env.obstacle_radii
 
                     self.log(f'Beginning simulation {i} goal {j}')
                     for k in range(self.num_simulation_time_steps):
