@@ -15,13 +15,11 @@ def plot_trajectory(initial_state, goal_states, state_trajectory, partial_trajec
             circle = plt.Circle((obstacle_centers[o,:]), obstacle_radii[o], color = 'green')
             ax[0,0].add_patch(circle)
     
-    #ax[0,0].scatter(obstacle_centers[:,0], obstacle_centers[:,1], s = obstacle_radii.reshape(-1) * 10, c='green', label = 'Obstacles')
     ax[0,0].set_title("Position trajectory")
     
     time = np.arange(state_trajectory.shape[0])
     
     ax[0,0].scatter(goal_states[:,0], goal_states[:,1], s=30, c='red', label = 'Goal positions')
-    
     ax[0,1].plot(time, state_trajectory[:,3], label = 'Trajectory') #velocity history
     vel_goals = [np.ones(traj.shape[0]) * goal_states[i,3] for i, traj in enumerate(partial_trajectory_list)]
     

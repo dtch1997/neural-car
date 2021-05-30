@@ -39,17 +39,11 @@ class SCPAgent:
     max_iters: int = 20
     solver = cp.ECOS
 
-    # Obstacle parameters
-    obstacle_radii: np.ndarray = None 
-    obstacle_centers: np.ndarray = None
-
     # Debug parameters 
     verbose: bool = False
 
     @staticmethod 
     def add_argparse_args(parser):
-        parser.add_argument('--obstacle-radii', default = None)
-        parser.add_argument('--obstacle-centers', default = None)
         parser.add_argument('--num-time-steps-ahead', type = int, default = 200)
         parser.add_argument('--solve-tol', type=float, default = 1e-1)
         parser.add_argument('--convergence-tol', type=float, default = 1e-2)
@@ -58,8 +52,6 @@ class SCPAgent:
     @staticmethod 
     def from_argparse_args(args):
         return SCPAgent(
-            obstacle_radii = args.obstacle_radii,
-            obstacle_centers = args.obstacle_centers,
             num_time_steps_ahead = args.num_time_steps_ahead,
             solve_tol = args.solve_tol, 
             convergence_tol = args.convergence_tol
@@ -243,7 +235,6 @@ class SCPAgent:
             self._steps_since_last_solve = 0        
         return self._input_trajectory[self._steps_since_last_solve]                
 
-
     def _solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory, verbose = False):
         """ Perform one SCP solve to find an optimal trajectory """
         diff = self.convergence_tol + 1
@@ -252,13 +243,11 @@ class SCPAgent:
         prev_optval = self.time_step_duration * np.linalg.norm(prev_input_trajectory,'fro')**2 + np.linalg.norm(goal_state- prev_state_trajectory[-1] ,1)
 
         for iteration in range(self.max_iters):
-            # self._convex_solve is guaranteed to return a copy of state trajectory
             state_trajectory, input_trajectory, optval, status = self._convex_solve(initial_state, goal_state, prev_state_trajectory, prev_input_trajectory)
             if verbose: 
                 print(f"SCP iteration {iteration}: status {status}, optval {optval}")
             if status == 'infeasible':
                 raise Exception('Underlying convex problem was infeasible')
-            # diff = np.abs(prev_optval - optval)
             diff = np.abs(prev_optval - optval).max()
             if diff < self.convergence_tol:
                 break

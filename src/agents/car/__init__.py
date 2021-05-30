@@ -1,2 +1,4 @@
 from .scp import SCPAgent
-from .neural_net import NeuralNetAgent
+from .net import NeuralNetAgent
+from .scod import SCODNetAgent 
+from .backbone import Backbone

@@ -6,8 +6,6 @@ from .eval import EvaluationRunner
 
 class DataGenerationRunner(EvaluationRunner):
 
-
-
     @staticmethod 
     def from_argparse_args(args, env, agent):
         return DataGenerationRunner(args, env, agent)
