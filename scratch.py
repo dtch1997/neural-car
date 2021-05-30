@@ -1,7 +1,8 @@
 import h5py
 from src.utils.viz import plot_trajectory
 
-with h5py.File('simulation_output.hdf5','r') as file:
+with h5py.File('datasets/simulation_output.hdf5','r') as file:
+    print(file.keys())
     print(file['simulation_0'].keys())
     print(file['simulation_0'].attrs.keys())
 
