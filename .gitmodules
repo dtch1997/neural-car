@@ -1,0 +1,3 @@
+[submodule "dep/SCOD"]
+	path = dep/SCOD
+	url = git@github.com:StanfordASL/SCOD.git
