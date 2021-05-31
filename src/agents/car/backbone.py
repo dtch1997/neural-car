@@ -46,3 +46,19 @@ class Backbone(torch.nn.Module):
         hidden_out_2 = torch.tanh(self.hidden_2(hidden_out_1))
         action = self.hidden_3(hidden_out_2)
         return action 
+
+    def reset(self, env):
+        self.goal_state = env.goal_state
+        self.obstacle_centers = env.obstacle_centers
+        self.obstacle_radii = env.obstacle_radii
+
+    """
+    def save_to_checkpoint(self, filepath: str):
+        torch.save(self.state_dict(), filepath)
+    
+    @staticmethod 
+    def load_from_checkpoint(filepath: str, *args, **kwargs):
+        backbone = Backbone(*args, **kwargs)
+        backbone.load_state_dict(filepath)
+        return backbone
+    """

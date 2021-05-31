@@ -1,8 +1,9 @@
+from src.agents.car.backbone import Backbone
 import numpy as np
 
 from pathlib import Path
 from src.utils import plot_trajectory
-from src.runners.train import MSERegression
+from .train import TrainingWrapper
 
 class EvaluationRunner:
 
@@ -16,8 +17,15 @@ class EvaluationRunner:
         self.rearward_goals = args.rearward_goals
         self.num_goals = args.num_goals
 
-        if args.checkpoint_path is not None:
-            self.agent = MSERegression.load_from_checkpoint(args.checkpoint_path, args = None, agent = agent)
+        if agent.requires_backbone and args.checkpoint_path is not None:
+            self.log(f"Loading checkpointed model from {args.checkpoint_path}")
+            training_wrapper = TrainingWrapper.load_from_checkpoint(
+                args.checkpoint_path, 
+                backbone = Backbone.from_argparse_args(args)
+            )
+            agent.update_backbone(training_wrapper.backbone)
+        elif agent.requires_backbone and args.checkpoint_path is None:
+            self.log("Agent requires backbone but checkpoint path not specified")
 
     @staticmethod 
     def add_argparse_args(parser):
@@ -32,10 +40,6 @@ class EvaluationRunner:
         parser.add_argument("--rearward-goals", type=bool, default=False)
         parser.add_argument("--num-goals", type=int, default=1)
         return parser 
-
-    @property 
-    def save_dir(self) -> Path:
-        return Path('output')
 
     def log(self, message: str):
         print(message)
@@ -61,19 +65,19 @@ class EvaluationRunner:
         obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
         return relative_obstacle_centers, obstacle_radii
 
+    @property 
+    def save_dir(self) -> Path:
+        return Path('output')
+
     def run(self):
         self.save_dir.mkdir(exist_ok=True, parents=True)
         np.random.seed(self.world_seed)
         for i in range(self.num_rollouts):
-            #delta_x, delta_y, delta_th = (*np.random.uniform(low = -20, high = 20, size = 2), np.pi * np.random.uniform()-np.pi/2)
-            #relative_goal = np.array([delta_x,delta_y,delta_th])
-            #relative_obstacle_centers = np.random.uniform(low = -10, high = 10, size = (5, 2))
-            #obstacle_radii = np.ones(shape = (5, 1), dtype = np.float32)
-
             actual_trajectory = np.zeros(((self.num_simulation_time_steps + 1)*self.num_goals, self.env.num_states()))
 
             # Reset environment. Done once per rollout
             self.env.reset(disable_view=False) 
+
             self.env.update_obstacles(*self._generate_obstacles())
             obstacle_centers = self.env.obstacle_centers
             obstacle_radii = self.env.obstacle_radii
@@ -96,6 +100,7 @@ class EvaluationRunner:
                 self.log(f'Beginning simulation {i} goal {j}')
 
                 for k in range(self.num_simulation_time_steps):
+                    
                     self.env.render()
                     t += 1 # Increment the timer
                     try: 
@@ -115,6 +120,11 @@ class EvaluationRunner:
                         if np.linalg.norm(diff).item() < self.dist_threshold:
                             break
                     except Exception as e:
+                        import sys, os
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                        print(exc_type, fname, exc_tb.tb_lineno)
+                        raise Exception(e)
                         self.log(f"Rollout {i} on goal {j} exited with error {e}")
                         break       
 

@@ -15,8 +15,9 @@ def curr(var: cp.Variable):
 @dataclass
 class SCPAgent:
     """ Sequential convex programming controller, meant to be used with src.envs.car.Environment """
-    # using @dataclass automates generating the __init__ function and setting these fields
+    requires_backbone = False
 
+    # using @dataclass automates generating the __init__ function and setting these fields
     # Basic world parameters
     time_step_duration: float = 1 / Env.constants.fps # seconds. For 50 FPS
     num_time_steps_ahead: int = 1000

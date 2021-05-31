@@ -6,16 +6,13 @@ from typing import Dict
 from .backbone import Backbone
 
 class NeuralNetAgent(torch.nn.Module):
+    """ Inference wrapper for a trained Backbone """
 
-    def __init__(self, args):
-        """
-        Args:
-            obs_size: observation/state size of the environment
-            n_actions: number of discrete actions available in the environment
-            hidden_size: size of hidden layers
-        """
+    requires_backbone = True
+
+    def __init__(self, args = None, backbone = None):
         super(NeuralNetAgent, self).__init__()
-        self.backbone = Backbone.from_argparse_args(args)
+        self.backbone = backbone
 
     @staticmethod
     def add_argparse_args(parser):
@@ -24,15 +21,16 @@ class NeuralNetAgent(torch.nn.Module):
 
     @staticmethod
     def from_argparse_args(args):
-        return NeuralNetAgent(args)
-
-    def forward(self, sample: Dict[str, torch.Tensor]) -> torch.Tensor:
-        return self.backbone.forward(sample)
+        backbone = Backbone.from_argparse_args(args)
+        return NeuralNetAgent(args, backbone = backbone)
 
     def reset(self, env):
         self.goal_state = env.goal_state
         self.obstacle_centers = env.obstacle_centers
         self.obstacle_radii = env.obstacle_radii
+
+    def update_backbone(self, backbone):
+        self.backbone.load_state_dict(backbone.state_dict())
 
     def get_action(self, state: np.ndarray) -> np.ndarray:
 

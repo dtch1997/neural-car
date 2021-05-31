@@ -1,30 +1,31 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 import pytorch_lightning as pl
+
+from src.agents.car.backbone import Backbone
 from .data import CarDataModule
 
-class MSERegression(pl.LightningModule):
-    """ A pl.Lightning module for training a module to minimize MSE loss between source and target """
-    def __init__(self, args = None, agent: 'NeuralNetAgent' = None):
+class TrainingWrapper(pl.LightningModule):
+    """ A pl.Lightning module for training a module to minimize regression loss between source and target """
+    def __init__(self, loss_fn: str = 'l1', backbone: Backbone = None):
         super().__init__()
-        self.agent = agent
+        loss_fn_factory = ({
+            'l1': torch.nn.L1Loss,
+            'l2': torch.nn.MSELoss
+        })[loss_fn]
+
+        self.loss_fn = loss_fn_factory(reduction = 'mean')
+        self.backbone = backbone
 
     @staticmethod 
     def add_argparse_args(parser):
+        parser.add_argument('--loss-fn', type = str, default = 'l1', choices = ('l1', 'l2'))
         return parser
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.agent.forward(x)
-
-    def reset(self, env):
-        self.agent.reset(env)
-
-    def get_action(self, state: np.ndarray) -> np.ndarray:
-        return self.agent.get_action(state)
-
     @staticmethod
-    def from_argparse_args(args, agent):
-        return MSERegression(args, agent)
+    def from_argparse_args(args, backbone):
+        return TrainingWrapper(args.loss_fn, backbone)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.02)
@@ -34,9 +35,9 @@ class MSERegression(pl.LightningModule):
         inputs, targets = batch
         
         action = targets
-        action_pred = self.agent(inputs)
+        action_pred = self.backbone(inputs)
         # Compute MSE loss, averaging over samples
-        loss = torch.nn.functional.mse_loss(action_pred, action, reduction = 'mean')
+        loss = self.loss_fn(action_pred, action)
         # Compute relative deviation 
         avg_relative_deviation = (torch.abs(action_pred - action) / action).mean()
         return {'loss': loss, 'relative_deviation': avg_relative_deviation}
@@ -56,19 +57,18 @@ class MSERegression(pl.LightningModule):
 class TrainingRunner:
     def __init__(self, args, env, agent):
         self.env = env
-        self.agent = agent
         self.learning_rate = args.learning_rate
         self.epochs = args.epochs
 
         self.data_module = CarDataModule.from_argparse_args(args)
-        self.model = MSERegression.from_argparse_args(args, agent)
+        self.model = TrainingWrapper.from_argparse_args(args, agent.backbone)
         self.trainer = pl.Trainer(auto_lr_find=True)
 
     @staticmethod 
     def add_argparse_args(parser):
         parser.add_argument('--learning-rate', default = 0.01)
         parser.add_argument('--epochs', default = 1000)
-        parser = MSERegression.add_argparse_args(parser)
+        parser = TrainingWrapper.add_argparse_args(parser)
         parser = CarDataModule.add_argparse_args(parser)
         return parser 
 
