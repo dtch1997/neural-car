@@ -10,6 +10,10 @@ conda activate neural-car
 conda install pytorch cudatoolkit=10.2 -c pytorch
 conda install -c anaconda swig
 python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas pytorch-lightning h5py
+
+git submodule update --init --recursive 
+cd dep/SCOD 
+python -m pip install -e .
 ```
 
 ## Generate training data
