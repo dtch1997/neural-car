@@ -92,7 +92,7 @@ class Environment(CarRacing):
     def update_goal(self, relative_goal):
         """ 
         Input: relative goal in polar coordinates
-s       """
+        """
         # Set up the final state
         initial_state = self.current_state
         x, y = initial_state[0], initial_state[1]

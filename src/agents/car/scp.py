@@ -156,7 +156,10 @@ class SCPAgent:
 
         cost = (
             self.time_step_duration * cp.sum_squares(u)
-            + cp.norm(x[-1,:] - goal_state, p=1)
+            + cp.norm(cp.multiply(
+                (x[-1,:] - goal_state), 
+                np.array([10, 10, 1, 1, 1, 1, 1])
+            ), p=1) 
             + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
             + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
             + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
@@ -174,16 +177,7 @@ class SCPAgent:
                 0
             ))
 
-        objective = cp.Minimize(
-            self.time_step_duration * cp.sum_squares(u)
-            + cp.norm(x[-1,:] - goal_state, p=1)
-            + cp.sum(cp.maximum(x[:,3] - self.speed_limit, 0))
-            + cp.sum(cp.maximum(x[:,4] - self.kappa_limit, 0))
-            + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
-            + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))     
-        )
-        assert objective.is_dpp()
-
+        objective = cp.Minimize(cost)
         # Set up cp.Problem
         problem = cp.Problem(objective, constraints)
         
