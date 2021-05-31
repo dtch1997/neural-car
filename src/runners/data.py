@@ -26,16 +26,10 @@ class CarDataset(Dataset):
         current_state = torch.from_numpy(sub_data['state_trajectory'][traj_time+1,:].astype(np.float32))
         action = torch.from_numpy(sub_data['input_trajectory'][traj_time,:].astype(np.float32))
         goal_state = torch.from_numpy(sub_data.attrs['goal_state'].astype(np.float32))
-        obstacle_centers = torch.from_numpy(sub_data.attrs['obstacle_centers'].astype(np.float32))
-        obstacle_radii = torch.from_numpy(sub_data.attrs['obstacle_radii'].astype(np.float32))
 
-        inp = {
-            "trunc_state": current_state[3:],
-            "state": current_state,  
-            "relative_goal": current_state[:3] - goal_state[:3],
-            "relative_obstacle_centers": current_state[:2] - obstacle_centers,
-            "obstacle_radii": obstacle_radii, 
-        }
+        trunc_state = current_state[3:]
+        relative_goal = current_state[:3] - goal_state[:3]
+        inp = torch.cat([relative_goal, trunc_state])
         oup = action
 
         return inp, oup

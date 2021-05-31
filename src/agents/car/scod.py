@@ -26,7 +26,7 @@ class SCODNetAgent:
         Backbone.add_argparse_args(parser)
         SCPAgent.add_argparse_args(parser)
         parser.add_argument('--data-filepath', type = str, default = None)
-        parser.add_argument('--max-uncertainty', type = float, default = 0.5)
+        parser.add_argument('--max-uncertainty', type = float, default = 1)
         return parser
 
     @staticmethod
@@ -36,8 +36,7 @@ class SCODNetAgent:
 
     def reset(self, env):
         self.goal_state = env.goal_state
-        self.obstacle_centers = env.obstacle_centers
-        self.obstacle_radii = env.obstacle_radii
+        self.oracle.reset(env)
 
     def update_backbone(self, backbone):
         from nn_ood.posteriors import SCOD
@@ -50,22 +49,16 @@ class SCODNetAgent:
         self.backbone_wrapper.process_dataset(self.dataset)
 
     def get_action(self, state: np.ndarray) -> np.ndarray:
-
         relative_goal = state[:3] - self.goal_state[:3]
-        relative_obstacle_centers = state[:2] - self.obstacle_centers
         trunc_state = state[3:]
-
-        inputs = {
-            'trunc_state': torch.from_numpy(trunc_state.astype(np.float32)),
-            'state': torch.from_numpy(state.astype(np.float32)),
-            'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)),
-            'obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)),
-            'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32))
-        }
+        inputs_np = np.concatenate([trunc_state, relative_goal], axis=0)
+        inputs = torch.from_numpy(inputs_np).float().view(1,-1)
         
         nn_action, uncertainty = self.backbone_wrapper(inputs)
         nn_action = nn_action.detach().clone().numpy()    
         uncertainty = uncertainty.detach().clone().numpy()    
+
+        print(uncertainty)
 
         if uncertainty > self.max_uncertainty:
             return self.oracle.get_action(state)

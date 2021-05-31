@@ -33,16 +33,8 @@ class NeuralNetAgent(torch.nn.Module):
         self.backbone.load_state_dict(backbone.state_dict())
 
     def get_action(self, state: np.ndarray) -> np.ndarray:
-
         relative_goal = state[:3] - self.goal_state[:3]
-        relative_obstacle_centers = state[:2] - self.obstacle_centers
         trunc_state = state[3:]
-
-        inputs = {
-            'trunc_state': torch.from_numpy(trunc_state.astype(np.float32)),
-            'state': torch.from_numpy(state.astype(np.float32)),
-            'relative_goal': torch.from_numpy(relative_goal.astype(np.float32)),
-            'obstacle_centers': torch.from_numpy(relative_obstacle_centers.astype(np.float32)),
-            'obstacle_radii': torch.from_numpy(self.obstacle_radii.astype(np.float32))
-        }
+        inputs_np = np.concatenate([trunc_state, relative_goal], axis=1)
+        inputs = torch.from_numpy(inputs_np)
         return self.backbone(inputs).detach().clone().numpy()
