@@ -155,7 +155,7 @@ class SCPAgent:
         """
 
         cost = (
-            self.time_step_duration * cp.sum_squares(u)
+            self.time_step_duration * cp.sum(cp.huber(u, M=1))
             + cp.norm(cp.multiply(
                 (x[-1,:] - goal_state), 
                 np.array([10, 10, 1, 1, 1, 1, 1])
