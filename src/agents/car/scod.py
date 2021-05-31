@@ -55,10 +55,8 @@ class SCODNetAgent:
         inputs = torch.from_numpy(inputs_np).float().view(1,-1)
         
         nn_action, uncertainty = self.backbone_wrapper(inputs)
-        nn_action = nn_action.detach().clone().numpy()    
-        uncertainty = uncertainty.detach().clone().numpy()    
-
-        print(uncertainty)
+        nn_action = nn_action.detach().clone().numpy()[0]    
+        uncertainty = uncertainty.detach().clone().numpy()[0]
 
         if uncertainty > self.max_uncertainty:
             return self.oracle.get_action(state)

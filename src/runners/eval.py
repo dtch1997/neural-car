@@ -105,6 +105,7 @@ class EvaluationRunner:
                     t += 1 # Increment the timer
                     try: 
                         action = self.agent.get_action(current_state)
+                        print(action)
                         next_state, reward, done, info = self.env.take_action(action)            
                         current_state = next_state
                         actual_trajectory[t+1] = current_state
