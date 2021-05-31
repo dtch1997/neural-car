@@ -12,15 +12,26 @@ conda install -c anaconda swig
 python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow opencv-python pandas pytorch-lightning h5py
 ```
 
-Generate training data, train NN agent, and evaluate NN agent: 
+## Generate training data
 ```
-python main.py --runner gen --agent scp --num-simulation-time-steps 5000 --num-time-steps-ahead 1000 --num-rollouts 1 --world-seed 0
-python main.py --runner train --agent nn --data-filepath simulation_output.hdf5
-# check your lightning_logs dir to find the exact checkpoint to load
-python main.py --runner test --agent nn --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --world-seed 0
+python main.py --runner gen --agent scp --num-simulation-time-steps 5000 --num-time-steps-ahead 1000 --num-rollouts 1 --num-goals 1 --world-seed 0
 ```
 
-Visualize training statistics with Tensorboard: 
+## Train NN agent
+Generate training data, train NN agent, and evaluate NN agent: 
+```
+python main.py --runner train --agent nn --data-filepath datasets/simulation_output.hdf5
+# check your lightning_logs dir to find the exact checkpoint to load
+python main.py --runner test --agent nn --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0
+```
+
+## Use trained NN in SCOD agent 
+```
+# check your lightning_logs dir to find the exact checkpoint to load
+python main.py --runner test --agent scod --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0
+```
+
+## Visualize training statistics with Tensorboard: 
 ```
 tensorboard --logdir lightning_logs
 ```
