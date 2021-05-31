@@ -95,8 +95,15 @@ class Environment(CarRacing):
         """
         # Set up the final state
         initial_state = self.current_state
+        
         x, y = initial_state[0], initial_state[1]
         theta = initial_state[2]
+        
+        r, phi, delta_th = relative_goal
+        
+        delta_x, delta_y = (r*np.cos(phi+np.pi/2+theta),r*np.sin(phi+np.pi/2+theta))
+        relative_goal = np.array([delta_x, delta_y, delta_th])
+        
         self._goal_state = np.concatenate([np.array([x, y, theta]) + relative_goal, np.array([0, 0, 0, 0])])
 
     def update_obstacles(self, relative_obstacle_centers = None, obstacle_radii = None):

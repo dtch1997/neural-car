@@ -54,8 +54,8 @@ class EvaluationRunner:
             r, phi, delta_th = (30 * np.random.uniform(), np.pi * np.random.uniform()-np.pi/2, np.pi * np.random.uniform()-np.pi/2)
         else:
             r, phi, delta_th = (30 * np.random.uniform(), 2*np.pi * np.random.uniform()-np.pi, np.pi * np.random.uniform()-np.pi/2)
-        delta_x, delta_y = (r*np.cos(phi+np.pi/2),r*np.sin(phi+np.pi/2))
-        relative_goal = np.array([delta_x, delta_y, delta_th])
+        
+        relative_goal = np.array([r, phi, delta_th])
 
         return relative_goal
 
