@@ -6,11 +6,8 @@ from .backbone import Backbone
 from .scp import SCPAgent
 
 from typing import Dict
-from nn_ood.posteriors import SCOD
-from nn_ood.distributions import GaussianFixedDiagVar
 
 class SCODNetAgent:
-
     requires_backbone = True
 
     def __init__(self, args = None, backbone = None):
@@ -43,6 +40,8 @@ class SCODNetAgent:
         self.obstacle_radii = env.obstacle_radii
 
     def update_backbone(self, backbone):
+        from nn_ood.posteriors import SCOD
+        from nn_ood.distributions import GaussianFixedDiagVar
         self.backbone.load_state_dict(backbone.state_dict())
         self.backbone_wrapper = SCOD(
             backbone,
