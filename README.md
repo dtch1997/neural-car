@@ -32,7 +32,7 @@ python main.py --runner test --agent nn --checkpoint-path <path_to_checkpoint.ck
 ## Use trained NN in SCOD agent 
 ```
 # check your lightning_logs dir to find the exact checkpoint to load
-python main.py --runner test --agent scod --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0
+python main.py --runner test --agent scod --checkpoint-path <path_to_checkpoint.ckpt>--num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0  --data-filepath datasets/simulation_output.hdf5 
 ```
 
 ## Visualize training statistics with Tensorboard: 
