@@ -13,7 +13,9 @@ python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow op
 
 git submodule update --init --recursive 
 cd dep/SCOD 
-python -m pip install -e .
+pip install -e pytorch-hessian-eigenthings/
+pip install -e curvature/
+pip install -e .
 ```
 
 ## Alternate download instructions for SCOD
