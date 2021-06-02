@@ -16,6 +16,16 @@ cd dep/SCOD
 python -m pip install -e .
 ```
 
+## Alternate download instructions for SCOD
+If you are having trouble installing SCOD, you can try the following instead: 
+```
+git clone --recurse-submodules https://github.com/StanfordASL/SCOD.git
+cd SCOD
+pip install -e pytorch-hessian-eigenthings/
+pip install -e curvature/
+pip install -e .
+```
+
 ## Generate training data
 ```
 python main.py --runner gen --agent scp --num-simulation-time-steps 5000 --num-time-steps-ahead 1000 --num-rollouts 1 --num-goals 1 --world-seed 0
