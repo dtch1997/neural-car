@@ -13,7 +13,19 @@ python -m pip install gym[box2d] numpy matplotlib cvxpy simple-parsing pillow op
 
 git submodule update --init --recursive 
 cd dep/SCOD 
-python -m pip install -e .
+pip install -e pytorch-hessian-eigenthings/
+pip install -e curvature/
+pip install -e .
+```
+
+## Alternate download instructions for SCOD
+If you are having trouble installing SCOD, you can try the following instead: 
+```
+git clone --recurse-submodules https://github.com/StanfordASL/SCOD.git
+cd SCOD
+pip install -e pytorch-hessian-eigenthings/
+pip install -e curvature/
+pip install -e .
 ```
 
 ## Generate training data
@@ -32,7 +44,7 @@ python main.py --runner test --agent nn --checkpoint-path <path_to_checkpoint.ck
 ## Use trained NN in SCOD agent 
 ```
 # check your lightning_logs dir to find the exact checkpoint to load
-python main.py --runner test --agent scod --checkpoint-path <path_to_checkpoint.ckpt> --num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0
+python main.py --runner test --agent scod --checkpoint-path <path_to_checkpoint.ckpt>--num-simulation-time-steps 5000 --num-rollouts 1 --num-goals 1 --world-seed 0  --data-filepath datasets/simulation_output.hdf5 
 ```
 
 ## Visualize training statistics with Tensorboard: 
