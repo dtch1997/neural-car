@@ -40,4 +40,4 @@ class NeuralNetAgent(torch.nn.Module):
         
         nn_action = self.backbone(inputs)
         nn_action = nn_action.detach().clone().numpy()[0]    
-        return nn_action
+        return (nn_action, 'nn')

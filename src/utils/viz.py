@@ -1,12 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def plot_trajectory(initial_state, goal_states, state_trajectory, partial_trajectory_list,
+def plot_trajectory(initial_state, goal_states, state_trajectory, agent_history, partial_trajectory_list,
                     filepath: str, obstacle_centers, obstacle_radii, plot_obstacles=True):
     
     goal_states = np.atleast_2d(goal_states)
     fig, ax = plt.subplots(2,3)
-    ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], s=5, c='black', label = 'Planned trajectory') #vehicle trajectory
+    
+    colors = ['orange', 'purple']
+    
+    #ax[0,0].scatter(state_trajectory[:,0], state_trajectory[:,1], s=5, c='black', label = 'Planned trajectory') #vehicle trajectory
+    
+    for i in range(len(state_trajectory)):
+        ax[0,0].scatter(state_trajectory[i,0], state_trajectory[i,1], s=5, c=colors[int(agent_history[i])], label = 'Planned trajectory')
     
     ax[0,0].scatter(initial_state[0], initial_state[1], s=30, c='blue', label='Initial position')
     
@@ -44,6 +50,10 @@ def plot_trajectory(initial_state, goal_states, state_trajectory, partial_trajec
     ax[1,1].plot(time, np.hstack(curvature_goals), label= 'Goal')
     ax[1,1].legend()
     ax[1,1].set_title("Curvature history")
+    
+    ax[1,2].plot(time, agent_history, label= 'Goal')
+    ax[1,2].legend()
+    ax[1,2].set_title("Agent history")
     
     plt.savefig(filepath)
     

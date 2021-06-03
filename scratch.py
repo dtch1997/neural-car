@@ -25,6 +25,7 @@ with h5py.File('datasets/simulation_output.hdf5','r') as file:
         state_trajectory = np.concatenate(partial_trajectory_list, axis=0)
         goal_states = np.vstack(goal_states)
 
+        """
         plot_trajectory(
             initial_state, 
             goal_states, 
@@ -33,3 +34,15 @@ with h5py.File('datasets/simulation_output.hdf5','r') as file:
             f'datasets/{simulation_id}_{goal_id}.png', 
             obstacle_centers, obstacle_radii
         )
+        """
+        
+        plot_trajectory(initial_state, 
+                        goal_states, 
+                        state_trajectory, 
+                        np.ones(len(state_trajectory)), 
+                        partial_trajectory_list,
+                        'scratch_plot', 
+                        obstacle_centers, 
+                        obstacle_radii,
+                        plot_obstacles=False
+                        )

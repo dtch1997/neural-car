@@ -74,6 +74,7 @@ class EvaluationRunner:
         np.random.seed(self.world_seed)
         for i in range(self.num_rollouts):
             actual_trajectory = np.zeros(((self.num_simulation_time_steps + 1)*self.num_goals, self.env.num_states()))
+            agent_history = np.ones(((self.num_simulation_time_steps + 1)*self.num_goals, 1))
 
             # Reset environment. Done once per rollout
             self.env.reset(disable_view=False) 
@@ -102,13 +103,17 @@ class EvaluationRunner:
                 for k in range(self.num_simulation_time_steps):
                     
                     self.env.render()
-                    t += 1 # Increment the timer
+                    t += 1 # Increment the timer    
                     try: 
-                        action = self.agent.get_action(current_state)
-                        print(action)
+                        action, agent = self.agent.get_action(current_state)
+                        #print(action)
                         next_state, reward, done, info = self.env.take_action(action)            
                         current_state = next_state
                         actual_trajectory[t+1] = current_state
+                        if agent == 'nn':
+                            agent_history[t+1] = 0
+                        elif agent == 'scp':
+                            agent_history[t+1] = 1
                         partial_trajectory[k+1] = current_state
 
                         diff = self.env.goal_state[:3] - current_state[:3]
@@ -133,11 +138,12 @@ class EvaluationRunner:
                 initial_state = initial_state, 
                 goal_states = goal_states, 
                 state_trajectory = actual_trajectory[:t+1], 
+                agent_history = agent_history[:t+1],
                 partial_trajectory_list = partial_trajectory_list,
                 filepath = str(self.save_dir / f'actual_trajectory_{i}.png'), 
                 obstacle_centers = obstacle_centers, 
                 obstacle_radii = obstacle_radii,
-                plot_obstacles = True
+                plot_obstacles = False
             )
         return actual_trajectory
         

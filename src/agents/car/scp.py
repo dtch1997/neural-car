@@ -154,7 +154,7 @@ class SCPAgent:
                 <= 0
             ]
         """
-
+        
         cost = (
             self.time_step_duration * cp.sum(cp.huber(u, M=1))
             + cp.norm(cp.multiply(
@@ -166,7 +166,7 @@ class SCPAgent:
             + cp.sum(cp.maximum(x[:,5] - self.accel_limit, 0))
             + cp.sum(cp.maximum(x[:,6] - self.pinch_limit, 0))     
         )
-
+        """
         # Soft constraints on obstacle avoidance
         # Encourage the solver to have a margin of error in avoiding obstacles
         for o in range(self.num_obstacles):
@@ -177,7 +177,7 @@ class SCPAgent:
                 + 1,
                 0
             ))
-
+        """
         objective = cp.Minimize(cost)
         # Set up cp.Problem
         problem = cp.Problem(objective, constraints)
@@ -228,7 +228,7 @@ class SCPAgent:
                 verbose
             )
             self._steps_since_last_solve = 0        
-        return self._input_trajectory[self._steps_since_last_solve]                
+        return (self._input_trajectory[self._steps_since_last_solve], 'scp')             
 
     def _solve(self, initial_state, goal_state, initial_state_trajectory, initial_input_trajectory, verbose = False):
         """ Perform one SCP solve to find an optimal trajectory """

@@ -33,7 +33,7 @@ class Backbone(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.emb(x))
-        x = F.relu(self.h1(x))
-        x = F.relu(self.h2(x))
+        x = torch.tanh(self.emb(x))
+        x = torch.tanh(self.h1(x))
+        x = torch.tanh(self.h2(x))
         return self.out(x)

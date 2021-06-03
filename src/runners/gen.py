@@ -50,8 +50,9 @@ class DataGenerationRunner(EvaluationRunner):
                     current_state = self.env.current_state 
                     state_trajectory[0] = current_state
 
-                    self.env.update_goal(self._generate_goal())
                     self.env.update_obstacles(*self._generate_obstacles())
+                    self.env.update_goal(self._generate_goal())
+                    
                     self.agent.reset(self.env)
 
                     sub_grp.attrs['goal_state'] = self.env.goal_state
@@ -60,9 +61,10 @@ class DataGenerationRunner(EvaluationRunner):
 
                     self.log(f'Beginning simulation {i} goal {j}')
                     for k in range(self.num_simulation_time_steps):
+                        #self.env.render()
                         t += 1 # Increment the timer 
                         try: 
-                            action = self.agent.get_action(current_state)
+                            action, _ = self.agent.get_action(current_state)
                             next_state, reward, done, info = self.env.take_action(action)            
                             current_state = next_state
     
