@@ -50,8 +50,8 @@ class DataGenerationRunner(EvaluationRunner):
                     current_state = self.env.current_state 
                     state_trajectory[0] = current_state
 
-                    self.env.update_goal(self._generate_goal())
                     self.env.update_obstacles(*self._generate_obstacles())
+                    self.env.update_goal(self._generate_goal())
                     self.agent.reset(self.env)
 
                     sub_grp.attrs['goal_state'] = self.env.goal_state
