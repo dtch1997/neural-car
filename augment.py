@@ -154,18 +154,21 @@ def tracking_lqr(f, s_goal, s_bar, u_bar, Q, R, Qf):
 
 
 if __name__ == "__main__":
-    augmentation_factor = 100
+    augmentation_factor = 1
 
     with h5py.File('datasets/simulation_output.hdf5','r') as infile:
-        sim = infile['simulation_0']['goal_0']
+        sim = infile['simulation_0']
+        num_total_steps = sim.attrs['num_total_steps']
+        end_markers = sim.attrs['end_markers']
 
-        initial_state = sim['state_trajectory'][0]
-        goal_state = sim.attrs['goal_state']
-        state_trajectory = sim['state_trajectory']
-        input_trajectory = sim['input_trajectory']
-        obstacle_centers = sim.attrs['obstacle_centers']
-        obstacle_radii = sim.attrs['obstacle_radii']
-        num_steps = sim.attrs['num_steps']
+        goal = sim['goal_0']
+        initial_state = goal['state_trajectory'][0]
+        goal_state = goal.attrs['goal_state']
+        state_trajectory = goal['state_trajectory']
+        input_trajectory = goal['input_trajectory']
+        obstacle_centers = goal.attrs['obstacle_centers']
+        obstacle_radii = goal.attrs['obstacle_radii']
+        num_steps = goal.attrs['num_steps']
 
         ilqr_policy = ILQRPolicy(
             reference_state_trajectory = state_trajectory[:num_steps+1], 
@@ -174,7 +177,11 @@ if __name__ == "__main__":
         )
 
     with h5py.File('datasets/simulation_output_augmented.hdf5', 'w') as outfile:
-        subgrp = outfile.create_group('simulation_0').create_group('goal_0')
+        grp = outfile.create_group('simulation_0')
+        grp.attrs['num_total_steps'] = num_total_steps
+        grp.attrs['end_markers'] = end_markers
+
+        subgrp = grp.create_group('goal_0')
 
         subgrp.attrs['goal_state'] = goal_state
         subgrp.attrs['obstacle_centers'] = obstacle_centers

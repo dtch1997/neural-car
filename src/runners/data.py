@@ -23,7 +23,7 @@ class CarDataset(Dataset):
         traj_time = idx-start_marker-1 if start_marker > 0 else idx
 
         sub_data = self.dataset[f'goal_{goal}']
-        current_state = torch.from_numpy(sub_data['state_trajectory'][traj_time+1,:].astype(np.float32))
+        current_state = torch.from_numpy(sub_data['state_trajectory'][traj_time,:].astype(np.float32))
         action = torch.from_numpy(sub_data['input_trajectory'][traj_time,:].astype(np.float32))
         goal_state = torch.from_numpy(sub_data.attrs['goal_state'].astype(np.float32))
 
