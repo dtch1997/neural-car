@@ -26,10 +26,25 @@ def linearize(f, s, u):
     ###########################################################################
     return A, B
 
+def get_next_state(state, action):
+    """ Simulate one step of nonlinear dynamics """
+    h = 1 / 50
+
+    return jnp.array([
+        state[0] + h * state[3] * jnp.cos(state[2]),  # xpos 
+        state[1] + h * state[3] * jnp.sin(state[2]),  # ypos
+        state[2] + h * state[3] * state[4],          # theta
+        state[3] + h * state[5],                     # velocity
+        state[4] + h * state[6],                     # kappa
+        state[5] + h * action[0],                    # accel
+        state[6] + h * action[1],                   # pinch
+    ])
+
 @dataclass 
 class ILQRPolicy:
     reference_state_trajectory: np.ndarray 
     reference_action_trajectory: np.ndarray
+    goal_state: np.ndarray
     state_dim: int = 7
     action_dim: int = 2
     
@@ -37,15 +52,27 @@ class ILQRPolicy:
         self.Qf = 100 * np.identity(self.state_dim)
         self.Q = np.identity(self.state_dim)
         self.R = np.identity(self.action_dim)
+        self.compute_policy()
 
-    def get_policy(self):
-        pass
+    def compute_policy(self):
+        L, l = tracking_lqr(
+            f = jax.jit(get_next_state),
+            s_goal = self.goal_state,
+            s_bar = self.reference_state_trajectory,
+            u_bar = self.reference_action_trajectory,
+            Q = self.Q, 
+            R = self.R, 
+            Qf = self.Qf
+        )
+        self.L, self.l = L, l
 
-    def get_action(self, state, time):
-        return np.zeros(self.action_dim)
+    def get_action(self, state, t):
+        return self.reference_action_trajectory[t] \
+            + self.l[t] \
+            + self.L[t] @ (state - self.reference_state_trajectory[t])
 
-def ilqr(f, s0, s_goal, N, Q, R, Qf):
-    """Compute the iLQR set-point tracking solution.
+def tracking_lqr(f, s_goal, s_bar, u_bar, Q, R, Qf):
+    """Compute the LQR set-point tracking solution.
 
     Arguments
     ---------
@@ -86,68 +113,47 @@ def ilqr(f, s0, s_goal, N, Q, R, Qf):
     max_iters = int(1e3)  # maximum number of iLQR iterations
 
     # Initialize control law terms `L` and `l`
+    N = u_bar.shape[0]
     L = np.zeros((N, m, n))
     l = np.zeros((N, m))
 
-    # Initialize `u`, `u_bar`, `s`, and `s_bar` with a forward pass
-    u_bar = np.zeros((N, m))
-    s_bar = np.zeros((N + 1, n))
-    s_bar[0] = s0
-    for k in range(N):
-        s_bar[k+1] = f(s_bar[k], u_bar[k])
     u = np.copy(u_bar)
     s = np.copy(s_bar)
 
-    # iLQR loop
-    converged = False
-    for _ in range(max_iters):
-        # Linearize the dynamics at each step `k` of `(s_bar, u_bar)`
-        A, B = jax.vmap(linearize, in_axes=(None, 0, 0))(f, s_bar[:-1], u_bar)
-        A, B = np.array(A), np.array(B)
-        # WRITE YOUR CODE BELOW ###############################################
-        # Update the arrays `L`, `l`, `s`, and `u`.
-        ds_bar = s_bar - s_goal[np.newaxis, :]
-        V = Qf
-        vbold = Qf @ ds_bar[-1]
-        vplain = 0.5 * ds_bar[-1] @ Qf @ ds_bar[-1]
 
-        for k in range(N-1, -1, -1):
-            # Perform the dynamic programming update
-            Btk = np.transpose(B[k])
-            Atk = np.transpose(A[k])
-            Mk = 0.5 * (ds_bar[k] @ Q @ ds_bar[k] + u_bar[k] @ R @ u_bar[k]) + vplain
-            Muk = R @ u_bar[k] + Btk @ vbold
-            Mxk = Q @ ds_bar[k] + Atk @ vbold
-            Muuk = R + Btk @ V @ B[k]
-            Muukinv = np.linalg.inv(Muuk)
-            Muxk = Btk @ V @ A[k]
-            Mxxk = Q + Atk @ V @ A[k]
+    # Linearize the dynamics at each step `k` of `(s_bar, u_bar)`
+    A, B = jax.vmap(linearize, in_axes=(None, 0, 0))(f, s_bar[:-1], u_bar)
+    A, B = np.array(A), np.array(B)
+    # WRITE YOUR CODE BELOW ###############################################
+    # Update the arrays `L`, `l`, `s`, and `u`.
+    ds_bar = s_bar - s_goal[np.newaxis, :]
+    V = Qf
+    vbold = Qf @ ds_bar[-1]
+    vplain = 0.5 * ds_bar[-1] @ Qf @ ds_bar[-1]
 
-            l[k] = -Muukinv @ Muk 
-            L[k] = -Muukinv @ Muxk
-            V = Mxxk - np.transpose(L[k]) @ Muuk @ L[k] 
-            vbold = Mxk - np.transpose(L[k]) @ Muuk @ l[k]
-            vplain = Mk - 0.5 * l[k] @ Muuk @ l[k] 
+    for k in range(N-1, -1, -1):
+        # Perform the dynamic programming update
+        Btk = np.transpose(B[k])
+        Atk = np.transpose(A[k])
+        Mk = 0.5 * (ds_bar[k] @ Q @ ds_bar[k] + u_bar[k] @ R @ u_bar[k]) + vplain
+        Muk = R @ u_bar[k] + Btk @ vbold
+        Mxk = Q @ ds_bar[k] + Atk @ vbold
+        Muuk = R + Btk @ V @ B[k]
+        Muukinv = np.linalg.inv(Muuk)
+        Muxk = Btk @ V @ A[k]
+        Mxxk = Q + Atk @ V @ A[k]
 
-        #Roll out the planned policy
-        for k in range(N):
-            u[k] = u_bar[k] + l[k] + L[k] @ (s[k] - s_bar[k])
-            s[k+1] = f(s[k], u[k])
+        l[k] = -Muukinv @ Muk 
+        L[k] = -Muukinv @ Muxk
+        V = Mxxk - np.transpose(L[k]) @ Muuk @ L[k] 
+        vbold = Mxk - np.transpose(L[k]) @ Muuk @ l[k]
+        vplain = Mk - 0.5 * l[k] @ Muuk @ l[k] 
 
-        #######################################################################
+    return L, l
 
-        if np.max(np.abs(u - u_bar)) < eps:
-            converged = True
-            break
-        else:
-            u_bar[:] = u
-            s_bar[:] = s
-    if not converged:
-        raise RuntimeError('iLQR did not converge!')
-    return s_bar, u_bar, L, l
+
 
 if __name__ == "__main__":
-
     augmentation_factor = 100
 
     with h5py.File('datasets/simulation_output.hdf5','r') as infile:
@@ -162,8 +168,9 @@ if __name__ == "__main__":
         num_steps = sim.attrs['num_steps']
 
         ilqr_policy = ILQRPolicy(
-            reference_state_trajectory = state_trajectory[:num_steps], 
-            reference_action_trajectory = input_trajectory[:num_steps] 
+            reference_state_trajectory = state_trajectory[:num_steps+1], 
+            reference_action_trajectory = input_trajectory[:num_steps],
+            goal_state = goal_state
         )
 
     with h5py.File('datasets/simulation_output_augmented.hdf5', 'w') as outfile:
@@ -186,6 +193,8 @@ if __name__ == "__main__":
         )
 
         for t in range(num_steps):
+            if t % 10 == 0: 
+                print(t)
             for i in range(augmentation_factor):
                 # Perturb the state by adding noise to the location and orientation
                 noise = np.concatenate([
