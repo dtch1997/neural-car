@@ -57,8 +57,8 @@ class SCODNetAgent:
         nn_action, uncertainty = self.backbone_wrapper(inputs)
         nn_action = nn_action.detach().clone().numpy()[0]    
         uncertainty = uncertainty.detach().clone().numpy()[0]
-
-        if uncertainty > self.max_uncertainty:
+        print(uncertainty)
+        if 1./uncertainty > self.max_uncertainty:
             return self.oracle.get_action(state)
         else:
-            return nn_action
+            return (nn_action, 'nn')
